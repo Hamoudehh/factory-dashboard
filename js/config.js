@@ -1,4 +1,4 @@
-/* Static configuration: machines, shifts, reasons, targets. */
+/* Static configuration: machines, shift, reasons, targets, planning defaults. */
 (function (root, factory) {
   const mod = factory();
   if (typeof module === 'object' && module.exports) module.exports = mod;
@@ -8,22 +8,24 @@
     storageKey: 'fd.v1',
     backupKey: 'fd.v1.lastBackup',
     uiKey: 'fd.ui',
-    schemaVersion: 1,
+    schemaVersion: 2,
 
-    // Colors are validated with the dataviz palette validator (light + dark, CVD safe, no pink).
+    // Colors live in css/styles.css (--m-<id>), validated with the dataviz palette validator. Never pink.
     machines: [
       { id: 'rondo', name: 'רונדו', ratePerHour: 1800 },
       { id: 'krumster', name: 'קרומסטר', ratePerHour: 1500 },
       { id: 'filo', name: 'פילו', ratePerHour: 900 },
       { id: 'kanol', name: 'כנול', ratePerHour: 2400 },
+      { id: 'bread', name: 'לחם', ratePerHour: 1200 },
     ],
 
-    shifts: [
-      { id: 'morning', name: 'בוקר', start: 6, minutes: 480 },
-      { id: 'evening', name: 'ערב', start: 14, minutes: 480 },
-      { id: 'night', name: 'לילה', start: 22, minutes: 480 },
-    ],
+    // One production shift. Some workers continue to the extension end (overtime).
+    shifts: [{ id: 'morning', name: 'בוקר' }],
+    // Sunday–Friday. Friday ends early (settings.shift.fridayEnd).
+    workDays: [0, 1, 2, 3, 4, 5],
+    shortDay: 5,
 
+    // Fixed order: bars keep the same color even when sorted differently. Colors: --r-<id>.
     downtimeReasons: [
       { id: 'breakdown', name: 'תקלה' },
       { id: 'changeover', name: 'החלפת מוצר' },
@@ -53,8 +55,11 @@
       { id: 'finished', name: 'מוצר מוגמר' },
     ],
 
+    cartonUnit: 'קרטון',
+
     defaultSettings: {
-      plantName: 'מאפייה – קו ייצור',
+      plantName: 'ארומה - מאפים',
+      shift: { start: '06:00', end: '16:00', extendedEnd: '18:00', fridayEnd: '12:00' },
       targets: {
         oee: 0.85,
         oeeWarn: 0.65,
@@ -64,6 +69,12 @@
         attendanceWarn: 0.9,
         planAdherence: 0.95,
         planAdherenceWarn: 0.85,
+      },
+      planning: {
+        targetDays: 3,
+        maxProductsPerDay: 3,
+        changeoverMinutes: 15,
+        horizonDays: 6,
       },
     },
 

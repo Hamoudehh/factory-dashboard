@@ -14,17 +14,21 @@
     const p = (n) => String(n).padStart(2, '0');
     return `${K.toISO(d)}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
   };
-  const guessShift = () => {
-    const h = new Date().getHours();
-    if (h >= 7 && h < 15) return 'morning';
-    if (h >= 15 && h < 23) return 'evening';
-    return 'night';
-  };
   const byId = (arr, id) => arr.find((x) => x.id === id);
   const activeOnly = (arr) => arr.filter((x) => x.active !== false);
   const err = (errors, key) => (errors && errors[key] ? `<p class="field-error" id="err-${key}">${api.esc(errors[key])}</p>` : '');
   const inv = (errors, key) => (errors && errors[key] ? ' invalid' : '');
   const described = (errors, key) => (errors && errors[key] ? ` aria-invalid="true" aria-describedby="err-${key}"` : '');
+  const dayOpts = () => ({ workDays: C.workDays, shortDay: C.shortDay });
+  const shiftOf = () => api.state.settings.shift;
+  const isShortDay = (date) => K.parseISO(date).getDay() === C.shortDay;
+  // Regular and extended minutes for a date (a closed day still gets the regular shift length).
+  const shiftMinutes = (date, extended) => {
+    const sh = shiftOf();
+    const d = K.isWorkDay(date, C.workDays) ? date : '2026-09-24';
+    return K.dayMinutes(sh, d, Object.assign({ extended }, dayOpts()));
+  };
+  const overtimeHours = () => Math.max(0, (K.timeToMinutes(shiftOf().extendedEnd) - K.timeToMinutes(shiftOf().end)) / 60);
 
   function numField(id, label, value, errors, opts) {
     opts = opts || {};
@@ -82,10 +86,10 @@
     const today = api.today();
     if (name === 'production') {
       const m = S.lastMachine;
-      S.production = { date: today, shift: guessShift(), machineId: m, productId: firstProduct(s, m), plannedUnits: '', goodUnits: '', scrapUnits: '', plannedMinutes: 480, downtimes: [], workerIds: [], note: '', errors: {} };
+      S.production = { date: today, machineId: m, productId: firstProduct(s, m), plannedUnits: '', goodUnits: '', scrapUnits: '', plannedMinutes: shiftMinutes(today, false), downtimes: [], workerIds: [], note: '', errors: {} };
       S.production.workerIds = suggestWorkers(s, S.production);
     }
-    if (name === 'attendance') S.attendance = newAttendanceDraft(s, today, guessShift());
+    if (name === 'attendance') S.attendance = newAttendanceDraft(s, today);
     if (name === 'move') S.move = { date: today, itemId: (activeOnly(s.items)[0] || {}).id || '', type: 'in', qty: '', note: '', errors: {} };
     if (name === 'count') S.count = { date: today, itemId: (activeOnly(s.items)[0] || {}).id || '', qty: '', errors: {} };
     api.ui.entryForm = name;
@@ -100,7 +104,7 @@
   }
 
   function recentEntries(s) {
-    const { fmt, shiftName } = api;
+    const { fmt } = api;
     const out = [];
     for (const l of s.productionLogs) {
       const m = byId(s.machines, l.machineId) || {};
@@ -108,7 +112,7 @@
       out.push({
         kind: 'production', id: l.id, at: l.createdAt || l.date,
         text: `דיווח ייצור · ${m.name || ''} · ${p.name || ''}`,
-        sub: `${fmt.dateLong(l.date)} · ${shiftName(l.shift)} · ${fmt.int(l.goodUnits)} תקין, ${fmt.int(l.scrapUnits)} פחת ייצור`,
+        sub: `${fmt.dateLong(l.date)} · ${fmt.int(l.goodUnits)} תקין, ${fmt.int(l.scrapUnits)} פחת ייצור`,
       });
     }
     for (const mv of s.stockMoves) {
@@ -122,15 +126,15 @@
     }
     const batches = new Map();
     for (const r of s.attendance) {
-      const key = r.batchId || `${r.date}|${r.shift}`;
-      const b = batches.get(key) || { kind: 'attendance', id: key, at: '', date: r.date, shift: r.shift, n: 0, present: 0 };
+      const key = r.batchId || r.date;
+      const b = batches.get(key) || { kind: 'attendance', id: key, at: '', date: r.date, n: 0, present: 0 };
       b.n += 1;
       if (r.status === 'present') b.present += 1;
       if ((r.createdAt || r.date) > b.at) b.at = r.createdAt || r.date;
       batches.set(key, b);
     }
     for (const b of batches.values()) {
-      out.push({ kind: 'attendance', id: b.id, at: b.at, text: `נוכחות · משמרת ${shiftName(b.shift)}`, sub: `${fmt.dateLong(b.date)} · ${b.present} נוכחים מתוך ${b.n}` });
+      out.push({ kind: 'attendance', id: b.id, at: b.at, text: 'נוכחות יומית', sub: `${fmt.dateLong(b.date)} · ${b.present} נוכחים מתוך ${b.n}` });
     }
     return out.sort((x, y) => (x.at < y.at ? 1 : x.at > y.at ? -1 : 0)).slice(0, 10);
   }
@@ -150,8 +154,8 @@
       <section class="section">${api.sectionHead('הזנת נתונים', 'בחר מה לדווח')}
         ${missing.length ? `<div class="banner" style="margin:0">חסרים ${missing.join(', ')}. <a href="#settings">הוסף אותם בהגדרות</a> כדי להתחיל להזין.</div>` : ''}
         <div class="entry-grid">
-          ${btn('production', 'machines', 'דיווח ייצור', 'סוף משמרת, לכל מכונה', noProducts)}
-          ${btn('attendance', 'workers', 'נוכחות משמרת', 'כל העובדים בבת אחת', noWorkers)}
+          ${btn('production', 'machines', 'דיווח ייצור', 'לכל מוצר שיוצר במכונה', noProducts)}
+          ${btn('attendance', 'workers', 'נוכחות יומית', `כל העובדים, כולל מי שנשאר עד ${api.esc(s.settings.shift.extendedEnd)}`, noWorkers)}
           ${btn('move', 'swap', 'תנועת מלאי', 'כניסה, יציאה או פחת', noItems)}
           ${btn('count', 'count', 'ספירת מלאי', 'השוואה לכמות במערכת', noItems)}
         </div>
@@ -174,7 +178,7 @@
     api.commit((s) => {
       if (kind === 'production') s.productionLogs = s.productionLogs.filter((l) => l.id !== id);
       if (kind === 'move') s.stockMoves = s.stockMoves.filter((m) => m.id !== id);
-      if (kind === 'attendance') s.attendance = s.attendance.filter((r) => (r.batchId || `${r.date}|${r.shift}`) !== id);
+      if (kind === 'attendance') s.attendance = s.attendance.filter((r) => (r.batchId || r.date) !== id);
     }, { toast: 'הרשומה נמחקה' });
   }
 
@@ -186,11 +190,11 @@
     return p ? p.id : '';
   }
 
-  // Workers marked present for this date/shift/machine, else the last team on this machine and shift.
+  // Workers marked present on this machine and date, else the last team on this machine.
   function suggestWorkers(s, d) {
-    const present = s.attendance.filter((a) => a.date === d.date && a.shift === d.shift && a.machineId === d.machineId && a.status === 'present').map((a) => a.workerId);
+    const present = s.attendance.filter((a) => a.date === d.date && a.machineId === d.machineId && a.status === 'present').map((a) => a.workerId);
     if (present.length) return present;
-    const last = s.productionLogs.filter((l) => l.machineId === d.machineId && l.shift === d.shift).sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+    const last = s.productionLogs.filter((l) => l.machineId === d.machineId).sort((a, b) => (a.date < b.date ? 1 : -1))[0];
     const active = new Set(activeOnly(s.workers).map((w) => w.id));
     return last ? last.workerIds.filter((w) => active.has(w)) : [];
   }
@@ -199,8 +203,13 @@
     const s = c.s;
     const d = S.production;
     const e = d.errors;
+    const sh = s.settings.shift;
     const products = activeOnly(s.products).filter((p) => p.machineId === d.machineId);
     const reasons = C.downtimeReasons;
+    const regular = shiftMinutes(d.date, false);
+    const extended = shiftMinutes(d.date, true);
+    const presets = [[regular, `עד ${isShortDay(d.date) ? sh.fridayEnd : sh.end}`]];
+    if (extended > regular) presets.push([extended, `עד ${sh.extendedEnd}`]);
     const dtRows = d.downtimes.map((dt, i) => `
       <div class="dt-row">
         <select class="cell-input" data-dt-reason="${i}" aria-label="סיבת השבתה ${i + 1}">${reasons.map((r) => `<option value="${r.id}"${r.id === dt.reason ? ' selected' : ''}>${r.name}</option>`).join('')}</select>
@@ -216,24 +225,27 @@
         </div>
         <div class="fields">
           <div class="field${inv(e, 'date')}"><label for="f-date">תאריך</label><input type="date" id="f-date" data-f="date" max="${api.today()}" value="${d.date}"${described(e, 'date')}>${err(e, 'date')}</div>
-          <div class="field"><span class="label">משמרת</span><div class="seg" role="group" aria-label="משמרת">${C.shifts.map((sh) => `<button type="button" data-f-shift="${sh.id}" aria-pressed="${sh.id === d.shift}">${sh.name}</button>`).join('')}</div></div>
           <div class="field${inv(e, 'productId')}"><label for="f-productId">מוצר</label>
             ${products.length ? `<select id="f-productId" data-f="productId"${described(e, 'productId')}>${products.map((p) => `<option value="${p.id}"${p.id === d.productId ? ' selected' : ''}>${api.esc(p.name)}</option>`).join('')}</select>` : '<p class="hint">אין מוצרים למכונה הזו. <a href="#settings">הוסף מוצר בהגדרות</a>.</p>'}
             ${err(e, 'productId')}
           </div>
         </div>
+        <div class="field${inv(e, 'plannedMinutes')}"><span class="label">זמן עבודה על המוצר</span>
+          <div class="seg" role="group" aria-label="זמן עבודה">${presets.map(([min, label]) => `<button type="button" data-f-minutes="${min}" aria-pressed="${Number(d.plannedMinutes) === min}">${label} · ${min} דק'</button>`).join('')}</div>
+          <div class="fields" style="margin-top:6px">${numField('plannedMinutes', 'או הזן דקות', d.plannedMinutes, {}, { hint: 'אם יוצרו כמה מוצרים באותו יום, חלק את הדקות בין הדיווחים' })}</div>
+          ${err(e, 'plannedMinutes')}
+        </div>
         <div class="fields">
           ${numField('plannedUnits', 'יחידות מתוכננות', d.plannedUnits, e)}
           ${numField('goodUnits', 'יחידות תקינות', d.goodUnits, e)}
           ${numField('scrapUnits', 'פחת ייצור (יחידות)', d.scrapUnits, e, { placeholder: '0' })}
-          ${numField('plannedMinutes', 'דקות עבודה מתוכננות', d.plannedMinutes, e, { hint: 'משמרת מלאה = 480' })}
         </div>
         <div class="field${inv(e, 'downtimes')}"><span class="label">השבתות</span>
           ${dtRows || '<p class="hint">אין השבתות. אם המכונה עמדה, הוסף שורה לכל סיבה.</p>'}
           <div><button type="button" class="btn btn-sm" data-dt-add>${api.icon('plus')} הוסף השבתה</button></div>
           ${err(e, 'downtimes')}
         </div>
-        <div class="field"><span class="label">עובדים במשמרת</span>
+        <div class="field"><span class="label">עובדים על המכונה</span>
           ${workers.length ? `<div class="chips" role="group" aria-label="עובדים">${workers.map((w) => `<button type="button" class="chip" data-f-worker="${w.id}" aria-pressed="${d.workerIds.includes(w.id)}">${api.esc(w.name)}</button>`).join('')}</div>` : '<p class="hint">אין עובדים פעילים.</p>'}
         </div>
         <div class="field"><label for="f-note">הערה</label><textarea id="f-note" data-f="note" maxlength="200">${api.esc(d.note)}</textarea></div>
@@ -249,27 +261,29 @@
           const log = toLog(d);
           const el = document.getElementById('live-kpi');
           if (log.goodUnits == null || !log.plannedMinutes) {
-            el.innerHTML = '<span class="muted">מלא כמויות ודקות כדי לראות את ה-OEE של הדיווח</span>';
+            el.innerHTML = '<span class="muted">מלא כמויות ודקות כדי לראות את ה-OEE והקרטונים של הדיווח</span>';
             return;
           }
           const r = K.productionSummary([Object.assign({}, log, { scrapUnits: log.scrapUnits || 0 })], rate);
           const st = K.statusHigh(r.oee, s.settings.targets.oee, s.settings.targets.oeeWarn);
-          el.innerHTML = `<span>OEE <b>${api.fmt.pct(r.oee)}</b></span>${api.pill(st)}<span>זמינות ${api.fmt.pct(r.A, 0)}</span><span>ביצועים ${api.fmt.pct(r.P, 0)}</span><span>איכות ${api.fmt.pct(r.Q, 0)}</span>`;
+          const per = Number((byId(s.products, log.productId) || {}).unitsPerCarton) || 1;
+          el.innerHTML = `<span>OEE <b>${api.fmt.pct(r.oee)}</b></span>${api.pill(st)}<span>קרטונים <b>${api.fmt.dec(log.goodUnits / per)}</b></span><span>זמינות ${api.fmt.pct(r.A, 0)}</span><span>ביצועים ${api.fmt.pct(r.P, 0)}</span><span>איכות ${api.fmt.pct(r.Q, 0)}</span>`;
         };
         live();
         root.querySelectorAll('[data-f]').forEach((el) => el.addEventListener('input', () => { d[el.dataset.f] = el.value; live(); }));
         root.querySelectorAll('[data-f]').forEach((el) => el.addEventListener('change', () => {
           d[el.dataset.f] = el.value;
-          if (el.dataset.f === 'date' && !d.workerIds.length) { d.workerIds = suggestWorkers(s, d); api.render(); }
+          if (el.dataset.f === 'date') {
+            d.plannedMinutes = shiftMinutes(d.date, false);
+            if (!d.workerIds.length) d.workerIds = suggestWorkers(s, d);
+            api.render();
+          }
+          if (el.dataset.f === 'plannedMinutes' || el.dataset.f === 'productId') api.render();
         }));
+        root.querySelectorAll('[data-f-minutes]').forEach((b) => b.addEventListener('click', () => { d.plannedMinutes = Number(b.dataset.fMinutes); api.render(); }));
         root.querySelectorAll('[data-f-machine]').forEach((b) => b.addEventListener('click', () => {
           d.machineId = b.dataset.fMachine;
           d.productId = firstProduct(s, d.machineId);
-          d.workerIds = suggestWorkers(s, d);
-          api.render();
-        }));
-        root.querySelectorAll('[data-f-shift]').forEach((b) => b.addEventListener('click', () => {
-          d.shift = b.dataset.fShift;
           d.workerIds = suggestWorkers(s, d);
           api.render();
         }));
@@ -281,8 +295,7 @@
         root.querySelectorAll('[data-dt-reason]').forEach((el) => el.addEventListener('change', () => { d.downtimes[+el.dataset.dtReason].reason = el.value; }));
         root.querySelectorAll('[data-dt-min]').forEach((el) => el.addEventListener('input', () => { d.downtimes[+el.dataset.dtMin].minutes = el.value; live(); }));
         root.querySelectorAll('[data-dt-rm]').forEach((b) => b.addEventListener('click', () => { d.downtimes.splice(+b.dataset.dtRm, 1); api.render(); }));
-        const add = root.querySelector('[data-dt-add]');
-        add.addEventListener('click', () => {
+        root.querySelector('[data-dt-add]').addEventListener('click', () => {
           d.downtimes.push({ reason: 'breakdown', minutes: '' });
           api.render();
           const inputs = document.querySelectorAll('[data-dt-min]');
@@ -297,7 +310,7 @@
 
   function toLog(d) {
     return {
-      date: d.date, shift: d.shift, machineId: d.machineId, productId: d.productId,
+      date: d.date, shift: 'morning', machineId: d.machineId, productId: d.productId,
       plannedUnits: num(d.plannedUnits), goodUnits: num(d.goodUnits), scrapUnits: num(d.scrapUnits),
       plannedMinutes: num(d.plannedMinutes),
       downtimes: d.downtimes.map((x) => ({ reason: x.reason, minutes: num(x.minutes) })),
@@ -308,6 +321,7 @@
   function validateProduction(s, d) {
     const e = {};
     const log = toLog(d);
+    const maxMinutes = shiftMinutes(log.date || api.today(), true);
     if (!log.date) e.date = 'בחר תאריך';
     else if (log.date > api.today()) e.date = 'אי אפשר לדווח על תאריך עתידי';
     if (!byId(s.machines, log.machineId)) e.machineId = 'בחר מכונה';
@@ -315,9 +329,9 @@
     if (!isWhole(log.plannedUnits)) e.plannedUnits = 'הזן מספר שלם, 0 או יותר';
     if (!isWhole(log.goodUnits)) e.goodUnits = 'הזן מספר שלם, 0 או יותר';
     if (log.scrapUnits != null && !isWhole(log.scrapUnits)) e.scrapUnits = 'הזן מספר שלם, 0 או יותר';
-    if (!isWhole(log.plannedMinutes) || log.plannedMinutes < 1 || log.plannedMinutes > 720) e.plannedMinutes = 'הזן בין 1 ל-720 דקות';
+    if (!isWhole(log.plannedMinutes) || log.plannedMinutes < 1 || log.plannedMinutes > maxMinutes) e.plannedMinutes = `הזן בין 1 ל-${maxMinutes} דקות`;
     if (log.downtimes.some((x) => !isWhole(x.minutes) || x.minutes < 1)) e.downtimes = 'בכל שורת השבתה הזן דקות (מספר שלם גדול מ-0), או הסר את השורה';
-    else if (!e.plannedMinutes && K.logDowntime(log) > log.plannedMinutes) e.downtimes = `סך ההשבתות (${K.logDowntime(log)} דק') גדול מהזמן המתוכנן (${log.plannedMinutes} דק')`;
+    else if (!e.plannedMinutes && K.logDowntime(log) > log.plannedMinutes) e.downtimes = `סך ההשבתות (${K.logDowntime(log)} דק') גדול מזמן העבודה (${log.plannedMinutes} דק')`;
     return { e, log };
   }
 
@@ -339,27 +353,31 @@
   }
 
   // =====================================================================
-  // Attendance
+  // Attendance (one shift per day; some workers stay to the extension end)
   // =====================================================================
-  function newAttendanceDraft(s, date, shift) {
+  function newAttendanceDraft(s, date) {
     const rows = {};
+    const hours = shiftMinutes(date, false) / 60;
     for (const w of activeOnly(s.workers)) {
-      const existing = s.attendance.find((a) => a.date === date && a.shift === shift && a.workerId === w.id);
+      const existing = s.attendance.find((a) => a.date === date && a.workerId === w.id);
       const last = s.attendance.filter((a) => a.workerId === w.id).sort((a, b) => ((a.createdAt || a.date) < (b.createdAt || b.date) ? 1 : -1))[0];
       rows[w.id] = existing
-        ? { status: existing.status, hours: existing.hours, overtime: existing.overtimeHours || 0, machineId: existing.machineId || '' }
-        : { status: last && last.shift === shift ? 'present' : 'skip', hours: 8, overtime: 0, machineId: (last && last.machineId) || '' };
+        ? { status: existing.status, hours: existing.status === 'present' ? existing.hours : hours, late: (existing.overtimeHours || 0) > 0, machineId: existing.machineId || '' }
+        : { status: 'present', hours, late: false, machineId: (last && last.machineId) || '' };
     }
-    return { date, shift, rows, errors: {} };
+    return { date, rows, errors: {} };
   }
 
   function attendanceForm(c) {
     const s = c.s;
     const d = S.attendance;
     const e = d.errors;
-    const statuses = [{ id: 'skip', name: '—', title: 'לא במשמרת' }].concat(C.attendanceStatus);
+    const sh = s.settings.shift;
+    const statuses = [{ id: 'skip', name: '—', title: 'לא עבד היום' }].concat(C.attendanceStatus);
     const workers = activeOnly(s.workers);
-    const inShift = workers.filter((w) => d.rows[w.id].status !== 'skip').length;
+    const presentCount = workers.filter((w) => d.rows[w.id].status === 'present').length;
+    const lateCount = workers.filter((w) => d.rows[w.id].status === 'present' && d.rows[w.id].late).length;
+    const short = isShortDay(d.date);
     const rows = workers.map((w) => {
       const r = d.rows[w.id];
       return `<div class="att-row" data-status="${r.status}">
@@ -367,7 +385,7 @@
         <div class="seg" role="group" aria-label="סטטוס של ${api.esc(w.name)}">${statuses.map((st) => `<button type="button" data-att-status="${w.id}|${st.id}" aria-pressed="${r.status === st.id}"${st.title ? ` title="${st.title}" aria-label="${st.title}"` : ''}>${st.name}</button>`).join('')}</div>
         <div class="att-nums">
           <div><label for="h-${w.id}">שעות</label><input class="cell-input" type="number" id="h-${w.id}" data-att-num="${w.id}|hours" inputmode="decimal" min="0" max="16" step="0.5" value="${r.hours}"></div>
-          <div><label for="o-${w.id}">נוספות</label><input class="cell-input" type="number" id="o-${w.id}" data-att-num="${w.id}|overtime" inputmode="decimal" min="0" max="8" step="0.5" value="${r.overtime}"></div>
+          <div><span class="att-lbl">עד ${api.esc(sh.extendedEnd)}</span><button type="button" class="chip chip-block" data-att-late="${w.id}" aria-pressed="${!!r.late}"${short ? ' disabled' : ''}>${r.late ? `נשאר (+${overtimeHours()} ש')` : 'לא נשאר'}</button></div>
           <div><label for="mc-${w.id}">מכונה</label><select class="cell-input" id="mc-${w.id}" data-att-num="${w.id}|machineId"><option value="">—</option>${s.machines.map((m) => `<option value="${m.id}"${m.id === r.machineId ? ' selected' : ''}>${api.esc(m.name)}</option>`).join('')}</select></div>
         </div>
         ${err(e, 'w-' + w.id)}
@@ -375,13 +393,12 @@
     }).join('');
     const html = `
       <section class="form" aria-labelledby="att-title">
-        ${formHead('<span id="att-title">נוכחות משמרת</span>')}
+        ${formHead('<span id="att-title">נוכחות יומית</span>')}
         <div class="fields">
           <div class="field${inv(e, 'date')}"><label for="f-att-date">תאריך</label><input type="date" id="f-att-date" max="${api.today()}" value="${d.date}">${err(e, 'date')}</div>
-          <div class="field"><span class="label">משמרת</span><div class="seg" role="group" aria-label="משמרת">${C.shifts.map((sh) => `<button type="button" data-att-shift="${sh.id}" aria-pressed="${sh.id === d.shift}">${sh.name}</button>`).join('')}</div></div>
+          <div class="field"><span class="label">משמרת</span><p class="live-kpi" style="margin:0">${api.esc(sh.start)}–${api.esc(short ? sh.fridayEnd : sh.end)}${short ? '' : ` · הארכה עד ${api.esc(sh.extendedEnd)} נרשמת כשעות נוספות`}</p></div>
         </div>
-        <p class="hint">סמן סטטוס לכל עובד שהיה אמור לעבוד במשמרת. "—" = לא במשמרת. ${inShift} עובדים מסומנים.</p>
-        <div class="btn-row"><button type="button" class="btn btn-sm" data-att-all>כל המסומנים נוכחים</button></div>
+        <p class="hint">${presentCount} נוכחים · ${lateCount} נשארים עד ${api.esc(sh.extendedEnd)}. "—" = עובד שלא היה אמור לעבוד היום.</p>
         ${err(e, 'rows')}
         <div class="att-list">${rows || '<div class="empty">אין עובדים פעילים</div>'}</div>
         <div class="btn-row"><button type="button" class="btn btn-primary" data-save>שמור נוכחות</button><button type="button" class="btn" data-back>ביטול</button></div>
@@ -390,23 +407,21 @@
       html,
       after() {
         const root = document.getElementById('view');
-        document.getElementById('f-att-date').addEventListener('change', (ev) => { S.attendance = newAttendanceDraft(s, ev.target.value, d.shift); api.render(); });
-        root.querySelectorAll('[data-att-shift]').forEach((b) => b.addEventListener('click', () => { S.attendance = newAttendanceDraft(s, d.date, b.dataset.attShift); api.render(); }));
+        document.getElementById('f-att-date').addEventListener('change', (ev) => { S.attendance = newAttendanceDraft(s, ev.target.value); api.render(); });
         root.querySelectorAll('[data-att-status]').forEach((b) => b.addEventListener('click', () => {
           const [wid, st] = b.dataset.attStatus.split('|');
           d.rows[wid].status = st;
-          const row = b.closest('.att-row');
-          row.dataset.status = st;
-          row.querySelectorAll('[data-att-status]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+          api.render();
+        }));
+        root.querySelectorAll('[data-att-late]').forEach((b) => b.addEventListener('click', () => {
+          const r = d.rows[b.dataset.attLate];
+          r.late = !r.late;
+          api.render();
         }));
         root.querySelectorAll('[data-att-num]').forEach((el) => el.addEventListener('change', () => {
           const [wid, key] = el.dataset.attNum.split('|');
           d.rows[wid][key] = el.value;
         }));
-        root.querySelector('[data-att-all]').addEventListener('click', () => {
-          for (const id of Object.keys(d.rows)) if (d.rows[id].status !== 'skip') d.rows[id].status = 'present';
-          api.render();
-        });
         root.querySelectorAll('[data-back]').forEach((b) => b.addEventListener('click', closeForm));
         root.querySelector('[data-save]').addEventListener('click', () => saveAttendance(s, d));
         if (Object.keys(e).length) focusFirstError();
@@ -423,9 +438,7 @@
     for (const [wid, r] of marked) {
       if (r.status !== 'present') continue;
       const h = num(r.hours);
-      const o = num(r.overtime) || 0;
       if (h == null || h < 0 || h > 16) e['w-' + wid] = 'שעות: בין 0 ל-16';
-      else if (o < 0 || o > 8) e['w-' + wid] = 'שעות נוספות: בין 0 ל-8';
     }
     d.errors = e;
     if (Object.keys(e).length) {
@@ -435,14 +448,15 @@
     const batchId = Store.newId('b');
     const stamp = nowStamp();
     const ids = new Set(Object.keys(d.rows));
+    const ot = isShortDay(d.date) ? 0 : overtimeHours();
     api.ui.entryForm = null;
     api.commit((st) => {
-      st.attendance = st.attendance.filter((a) => !(a.date === d.date && a.shift === d.shift && ids.has(a.workerId)));
+      st.attendance = st.attendance.filter((a) => !(a.date === d.date && ids.has(a.workerId)));
       for (const [wid, r] of marked) {
         const present = r.status === 'present';
         st.attendance.push({
-          id: Store.newId('a'), batchId, date: d.date, shift: d.shift, workerId: wid, status: r.status,
-          hours: present ? num(r.hours) : 0, overtimeHours: present ? num(r.overtime) || 0 : 0,
+          id: Store.newId('a'), batchId, date: d.date, shift: 'morning', workerId: wid, status: r.status,
+          hours: present ? num(r.hours) : 0, overtimeHours: present && r.late ? ot : 0,
           machineId: r.machineId || null, createdAt: stamp,
         });
       }
@@ -463,7 +477,9 @@
 
   const stockOf = (s, itemId, date) => {
     const it = byId(s.items, itemId);
-    return it ? K.itemStock(it, s.stockMoves, s.productionLogs, date) : 0;
+    if (!it) return 0;
+    const per = it.productId ? Number((byId(s.products, it.productId) || {}).unitsPerCarton) || 1 : 1;
+    return K.itemStock(it, s.stockMoves, s.productionLogs, date, per);
   };
 
   function moveForm(c) {
@@ -482,7 +498,7 @@
           <div class="field${inv(e, 'qty')}"><label for="f-mv-qty">כמות${it.unit ? ` (${api.esc(it.unit)})` : ''}</label><input type="number" id="f-mv-qty" data-mv="qty" inputmode="decimal" min="0" step="any" value="${api.esc(d.qty)}"${described(e, 'qty')}>${err(e, 'qty')}</div>
         </div>
         <p class="live-kpi" id="mv-info"></p>
-        <div class="field"><label for="f-mv-note">הערה</label><input type="text" id="f-mv-note" data-mv="note" maxlength="120" value="${api.esc(d.note)}" placeholder="ספק, מספר תעודה, סיבה"></div>
+        <div class="field"><label for="f-mv-note">הערה</label><input type="text" id="f-mv-note" data-mv="note" maxlength="120" value="${api.esc(d.note)}" placeholder="ספק, מספר תעודה, סניף, סיבה"></div>
         <div class="btn-row"><button type="button" class="btn btn-primary" data-save>שמור תנועה</button><button type="button" class="btn" data-back>ביטול</button></div>
       </section>`;
     return {
@@ -591,12 +607,27 @@
   // =====================================================================
   // Settings
   // =====================================================================
-  const TARGET_FIELDS = [
-    ['oee', 'יעד OEE'], ['oeeWarn', 'OEE: מתחת לזה = חריגה'],
-    ['scrapMax', 'פחת ייצור מקסימלי'], ['scrapWarn', 'פחת ייצור: מעל זה = חריגה'],
-    ['attendance', 'יעד נוכחות'], ['attendanceWarn', 'נוכחות: מתחת לזה = חריגה'],
-    ['planAdherence', 'יעד עמידה בתכנון'], ['planAdherenceWarn', 'עמידה בתכנון: מתחת לזה = חריגה'],
+  // Target cards: each KPI has a goal and a red line. Values are shown in %, stored as fractions.
+  const TARGET_CARDS = [
+    { title: 'OEE', desc: 'יעילות כוללת של המכונות', fields: [['oee', 'יעד', 'מעל = ירוק'], ['oeeWarn', 'סף חריגה', 'מתחת = אדום']] },
+    { title: 'פחת ייצור', desc: 'יחידות שנפסלו מתוך מה שיוצר', fields: [['scrapMax', 'יעד מקסימלי', 'עד = ירוק'], ['scrapWarn', 'סף חריגה', 'מעל = אדום']] },
+    { title: 'נוכחות', desc: 'נוכחים מתוך מי שהיה אמור לעבוד', fields: [['attendance', 'יעד', 'מעל = ירוק'], ['attendanceWarn', 'סף חריגה', 'מתחת = אדום']] },
+    { title: 'עמידה בתכנון', desc: 'יחידות תקינות מתוך המתוכנן', fields: [['planAdherence', 'יעד', 'מעל = ירוק'], ['planAdherenceWarn', 'סף חריגה', 'מתחת = אדום']] },
   ];
+  const SHIFT_FIELDS = [['start', 'תחילת משמרת'], ['end', 'סוף משמרת'], ['extendedEnd', 'הארכה (שעות נוספות) עד'], ['fridayEnd', 'שישי עד']];
+  const PLAN_FIELDS = [
+    ['targetDays', 'ימי מלאי יעד', 'ימים', 0.5, 1, 14],
+    ['maxProductsPerDay', 'מוצרים למכונה ביום', 'מוצרים', 1, 1, 8],
+    ['changeoverMinutes', 'החלפת מוצר', 'דק\'', 1, 0, 120],
+    ['horizonDays', 'אורך התוכנית', 'ימי עבודה', 1, 1, 12],
+  ];
+
+  // A centered value with its unit right next to it. The whole box is the click target.
+  const vbox = (id, label, value, unit, hint, attrs) => `<div class="vbox">
+      <span class="vbox-label" id="${id}-l">${label}</span>
+      <label class="vbox-input${unit && unit !== '%' ? ' unit-rtl' : ''}" for="${id}"><input id="${id}" ${attrs} value="${api.esc(value)}" aria-labelledby="${id}-l">${unit ? `<span class="vbox-unit" aria-hidden="true">${unit}</span>` : ''}</label>
+      ${hint ? `<span class="vbox-hint">${hint}</span>` : ''}
+    </div>`;
 
   const cellText = (coll, id, field, value, label) => `<input class="cell-input" type="text" data-edit="${coll}|${id}|${field}|text" value="${api.esc(value)}" aria-label="${label}">`;
   const cellNum = (coll, id, field, value, label, step) => `<input class="cell-input" type="number" inputmode="decimal" min="0" step="${step || 'any'}" data-edit="${coll}|${id}|${field}|num" value="${api.esc(value)}" aria-label="${label}">`;
@@ -608,31 +639,44 @@
     api = a;
     const s = c.s;
     const t = s.settings.targets;
+    const sh = s.settings.shift;
+    const P = s.settings.planning;
     const backup = Store.loadBackup();
     const theme = api.ui.theme;
+    const pct = (v) => Math.round(v * 1000) / 10;
 
     const machinesRows = s.machines.map((m) => `<tr><td><i class="swatch" style="background:var(--m-${m.id})"></i>${m.id}</td><td>${cellText('machines', m.id, 'name', m.name, 'שם מכונה')}</td><td>${cellNum('machines', m.id, 'ratePerHour', m.ratePerHour, 'קצב אידיאלי ליחידות בשעה', 1)}</td></tr>`).join('');
-    const productRows = s.products.map((p) => `<tr><td>${cellText('products', p.id, 'name', p.name, 'שם מוצר')}</td><td>${cellSelect('products', p.id, 'machineId', p.machineId, s.machines, 'מכונה')}</td><td>${cellNum('products', p.id, 'price', p.price, 'מחיר מכירה', 0.01)}</td><td>${cellNum('products', p.id, 'cost', p.cost, 'עלות ליחידה', 0.01)}</td><td>${cellBool('products', p.id, p.active, 'מוצר פעיל')}</td><td>${delBtn('products', p.id, p.name)}</td></tr>`).join('');
+    const productRows = s.products.map((p) => `<tr><td>${cellText('products', p.id, 'name', p.name, 'שם מוצר')}</td><td>${cellSelect('products', p.id, 'machineId', p.machineId, s.machines, 'מכונה')}</td><td>${cellNum('products', p.id, 'unitsPerCarton', p.unitsPerCarton, 'יחידות בקרטון', 1)}</td><td>${cellNum('products', p.id, 'dailyDemand', p.dailyDemand, 'צריכת לקוחות ליום בקרטונים', 1)}</td><td>${cellNum('products', p.id, 'price', p.price, 'מחיר מכירה', 0.01)}</td><td>${cellNum('products', p.id, 'cost', p.cost, 'עלות ליחידה', 0.01)}</td><td>${cellBool('products', p.id, p.active, 'מוצר פעיל')}</td><td>${delBtn('products', p.id, p.name)}</td></tr>`).join('');
     const workerRows = s.workers.map((w) => `<tr><td>${cellText('workers', w.id, 'name', w.name, 'שם עובד')}</td><td>${cellText('workers', w.id, 'role', w.role || '', 'תפקיד')}</td><td>${cellNum('workers', w.id, 'hourlyCost', w.hourlyCost, 'עלות לשעה', 0.5)}</td><td>${cellBool('workers', w.id, w.active, 'עובד פעיל')}</td><td>${delBtn('workers', w.id, w.name)}</td></tr>`).join('');
     const itemRows = s.items.map((i) => {
       const linked = !!i.productId;
-      return `<tr><td>${linked ? api.esc(i.name) : cellText('items', i.id, 'name', i.name, 'שם פריט')}</td><td>${cellSelect('items', i.id, 'category', i.category, C.itemCategories.filter((x) => linked || x.id !== 'finished'), 'סוג פריט', linked)}</td><td>${cellText('items', i.id, 'unit', i.unit, 'יחידת מידה')}</td><td>${cellNum('items', i.id, 'unitCost', i.unitCost, 'עלות ליחידה', 0.01)}</td><td>${cellNum('items', i.id, 'minQty', i.minQty, 'מלאי מינימום', 1)}</td><td>${linked ? '<span class="muted">לפי המוצר</span>' : cellBool('items', i.id, i.active, 'פריט פעיל')}</td><td>${linked ? '' : delBtn('items', i.id, i.name)}</td></tr>`;
+      return `<tr><td>${linked ? api.esc(i.name) : cellText('items', i.id, 'name', i.name, 'שם פריט')}</td><td>${cellSelect('items', i.id, 'category', i.category, C.itemCategories.filter((x) => linked || x.id !== 'finished'), 'סוג פריט', linked)}</td><td>${linked ? api.esc(i.unit) : cellText('items', i.id, 'unit', i.unit, 'יחידת מידה')}</td><td>${cellNum('items', i.id, 'unitCost', i.unitCost, 'עלות ליחידה', 0.01)}</td><td>${cellNum('items', i.id, 'minQty', i.minQty, 'מלאי מינימום', 1)}</td><td>${linked ? '<span class="muted">לפי המוצר</span>' : cellBool('items', i.id, i.active, 'פריט פעיל')}</td><td>${linked ? '' : delBtn('items', i.id, i.name)}</td></tr>`;
     }).join('');
 
     const table = (head, rows, empty) => `<div class="table-wrap settings-table"><table class="data"><thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows || `<tr><td colspan="${head.length}" class="muted">${empty}</td></tr>`}</tbody></table></div>`;
+    const card = (title, desc, body) => `<article class="set-card"><header><h3>${title}</h3>${desc ? `<p>${desc}</p>` : ''}</header>${body}</article>`;
+
+    const general = card('כללי', 'שם המפעל ומצב התצוגה', `
+      <div class="field"><label for="set-plant">שם המפעל</label><input type="text" id="set-plant" value="${api.esc(s.settings.plantName)}" maxlength="60"></div>
+      <div class="field"><span class="label">מצב תצוגה</span><div class="seg seg-full" role="group" aria-label="מצב תצוגה">${[['system', 'לפי המכשיר'], ['light', 'בהיר'], ['dark', 'כהה']].map(([v, l]) => `<button type="button" data-theme-set="${v}" aria-pressed="${theme === v}">${l}</button>`).join('')}</div></div>`);
+    const shiftCard = card('שעות עבודה', `משמרת אחת ביום, ראשון עד שישי. עבודה אחרי ${api.esc(sh.end)} נספרת כשעות נוספות`,
+      `<div class="vbox-grid">${SHIFT_FIELDS.map(([k, l]) => vbox(`sh-${k}`, l, sh[k], '', '', `type="time" step="900" data-shift="${k}"`)).join('')}</div>`);
+    const planCard = card('תכנון ייצור', 'הגדרות לבניית התוכנית השבועית',
+      `<div class="vbox-grid">${PLAN_FIELDS.map(([k, l, unit, step, min, max]) => vbox(`pl-${k}`, l, P[k], unit, '', `type="number" inputmode="decimal" step="${step}" min="${min}" max="${max}" data-plan="${k}"`)).join('')}</div>`);
+    const targetCards = TARGET_CARDS.map((tc) => card(tc.title, tc.desc,
+      `<div class="vbox-grid">${tc.fields.map(([k, l, hint]) => vbox(`tg-${k}`, l, pct(t[k]), '%', hint, `type="number" inputmode="decimal" step="0.5" min="0" max="100" data-target="${k}"`)).join('')}</div>`)).join('');
 
     const html = `
       <section class="section">${api.sectionHead('הגדרות', 'שינויים נשמרים אוטומטית')}
-        <div class="form">
-          <div class="field"><label for="set-plant">שם המפעל</label><input type="text" id="set-plant" value="${api.esc(s.settings.plantName)}" maxlength="60"></div>
-          <div class="fields">${TARGET_FIELDS.map(([k, l]) => `<div class="field"><label for="tg-${k}">${l} (%)</label><input type="number" id="tg-${k}" data-target="${k}" inputmode="decimal" min="0" max="100" step="0.5" value="${Math.round(t[k] * 1000) / 10}"></div>`).join('')}</div>
-          <div class="field"><span class="label">מצב תצוגה</span><div class="seg" role="group" aria-label="מצב תצוגה">${[['system', 'לפי המכשיר'], ['light', 'בהיר'], ['dark', 'כהה']].map(([v, l]) => `<button type="button" data-theme-set="${v}" aria-pressed="${theme === v}">${l}</button>`).join('')}</div></div>
-        </div>
+        <div class="set-grid set-grid-3">${general}${shiftCard}${planCard}</div>
+      </section>
+      <section class="section">${api.sectionHead('יעדים וספי חריגה', 'הערכים קובעים את צבעי הירוק, הצהוב והאדום בכל הדשבורד')}
+        <div class="set-grid">${targetCards}</div>
       </section>
       <section class="section">${api.sectionHead('מכונות', 'הצבע קבוע לכל מכונה')}${table(['מכונה', 'שם', 'קצב אידיאלי (יח\'/שעה)'], machinesRows)}</section>
-      <section class="section">${api.sectionHead('מוצרים', 'כל מוצר מקבל פריט מלאי מוגמר')}${table(['שם', 'מכונה', 'מחיר ₪', 'עלות ₪', 'פעיל', ''], productRows, 'אין מוצרים')}<div><button type="button" class="btn" data-add="products">${api.icon('plus')} הוסף מוצר</button></div></section>
+      <section class="section">${api.sectionHead('מוצרים', 'צריכת לקוחות ליום בקרטונים קובעת את ימי המלאי ואת התוכנית השבועית')}${table(['שם', 'מכונה', 'יח\' בקרטון', 'צריכה ליום (קר\')', 'מחיר ₪', 'עלות ₪', 'פעיל', ''], productRows, 'אין מוצרים')}<div><button type="button" class="btn" data-add="products">${api.icon('plus')} הוסף מוצר</button></div></section>
       <section class="section">${api.sectionHead('עובדים', '')}${table(['שם', 'תפקיד', 'עלות לשעה ₪', 'פעיל', ''], workerRows, 'אין עובדים')}<div><button type="button" class="btn" data-add="workers">${api.icon('plus')} הוסף עובד</button></div></section>
-      <section class="section">${api.sectionHead('פריטי מלאי', 'מוצר מוגמר מתעדכן מהמוצרים')}${table(['שם', 'סוג', 'יחידה', 'עלות ₪', 'מינימום', 'פעיל', ''], itemRows, 'אין פריטים')}<div><button type="button" class="btn" data-add="items">${api.icon('plus')} הוסף פריט</button></div></section>
+      <section class="section">${api.sectionHead('פריטי מלאי', 'מוצר מוגמר נספר בקרטונים ומתעדכן מהמוצרים')}${table(['שם', 'סוג', 'יחידה', 'עלות ₪', 'מינימום', 'פעיל', ''], itemRows, 'אין פריטים')}<div><button type="button" class="btn" data-add="items">${api.icon('plus')} הוסף פריט</button></div></section>
       <section class="section">${api.sectionHead('גיבוי ושחזור', 'הנתונים שמורים רק בדפדפן הזה')}
         <div class="form">
           <div class="btn-row">
@@ -666,11 +710,30 @@
           document.getElementById('plant-name').textContent = v;
           api.toast('שם המפעל עודכן');
         });
+        // Size number boxes to their value so the unit sits right next to it.
+        const fit = (el) => { el.style.width = `${Math.max(1, String(el.value).length) + 0.4}ch`; };
+        root.querySelectorAll('.vbox-input input[type="number"]').forEach((el) => { fit(el); el.addEventListener('input', () => fit(el)); });
         root.querySelectorAll('[data-target]').forEach((el) => el.addEventListener('change', () => {
           const v = num(el.value);
-          if (v == null || v < 0 || v > 100) { el.value = Math.round(api.state.settings.targets[el.dataset.target] * 1000) / 10; return api.toast('הזן אחוז בין 0 ל-100'); }
+          if (v == null || v < 0 || v > 100) { el.value = pct(api.state.settings.targets[el.dataset.target]); return api.toast('הזן אחוז בין 0 ל-100'); }
           api.commit((st) => { st.settings.targets[el.dataset.target] = v / 100; }, { render: false });
           api.toast('היעד עודכן');
+        }));
+        root.querySelectorAll('[data-shift]').forEach((el) => el.addEventListener('change', () => {
+          const next = Object.assign({}, api.state.settings.shift, { [el.dataset.shift]: el.value });
+          const m = (k) => K.timeToMinutes(next[k]);
+          const ok = /^\d{2}:\d{2}$/.test(el.value) && m('end') > m('start') && m('extendedEnd') >= m('end') && m('fridayEnd') > m('start');
+          if (!ok) { el.value = api.state.settings.shift[el.dataset.shift]; return api.toast('השעות לא תקינות: סוף המשמרת אחרי ההתחלה, וההארכה לא לפני סוף המשמרת'); }
+          api.commit((st) => { st.settings.shift[el.dataset.shift] = el.value; }, { render: false });
+          api.toast('שעות העבודה עודכנו');
+        }));
+        root.querySelectorAll('[data-plan]').forEach((el) => el.addEventListener('change', () => {
+          const f = PLAN_FIELDS.find((x) => x[0] === el.dataset.plan);
+          const v = num(el.value);
+          const whole = f[3] >= 1;
+          if (v == null || v < f[4] || v > f[5] || (whole && !Number.isInteger(v))) { el.value = api.state.settings.planning[f[0]]; return api.toast(`הזן ${whole ? 'מספר שלם ' : ''}בין ${f[4]} ל-${f[5]}`); }
+          api.commit((st) => { st.settings.planning[f[0]] = v; }, { render: false });
+          api.toast('הגדרות התכנון עודכנו');
         }));
         root.querySelectorAll('[data-theme-set]').forEach((b) => b.addEventListener('click', () => api.setTheme(b.dataset.themeSet)));
         root.querySelectorAll('[data-edit]').forEach((el) => el.addEventListener('change', () => editMaster(el)));
@@ -726,6 +789,7 @@
     else if (type === 'num') {
       value = num(el.value);
       if (value == null || value < 0) { el.value = row[field]; return api.toast('הזן מספר 0 או יותר'); }
+      if (field === 'unitsPerCarton' && !(value >= 1)) { el.value = row[field]; return api.toast('בקרטון יש לפחות יחידה אחת'); }
     } else {
       value = el.value.trim();
       if (!value && field !== 'role') { el.value = row[field]; return api.toast('השדה לא יכול להיות ריק'); }
@@ -737,8 +801,9 @@
         const fin = st.items.find((i) => i.productId === id);
         if (fin) {
           if (field === 'name') fin.name = value;
-          if (field === 'cost') fin.unitCost = value;
           if (field === 'active') fin.active = value;
+          if (field === 'cost' || field === 'unitsPerCarton') fin.unitCost = Math.round((Number(r.cost) || 0) * (Number(r.unitsPerCarton) || 1) * 100) / 100;
+          if (field === 'dailyDemand') fin.minQty = Math.round((Number(value) || 0) * 1.5);
         }
       }
     }, { render: false });
@@ -749,8 +814,8 @@
     const newId = coll === 'products' ? Store.newId('p') : coll === 'workers' ? Store.newId('w') : Store.newId('i');
     api.commit((st) => {
       if (coll === 'products') {
-        st.products.push({ id: newId, name: 'מוצר חדש', machineId: st.machines[0].id, price: 0, cost: 0, active: true });
-        st.items.push({ id: 'f-' + newId, name: 'מוצר חדש', category: 'finished', unit: 'יח\'', unitCost: 0, minQty: 0, productId: newId, active: true });
+        st.products.push({ id: newId, name: 'מוצר חדש', machineId: st.machines[0].id, price: 0, cost: 0, unitsPerCarton: 12, dailyDemand: 0, active: true });
+        st.items.push({ id: 'f-' + newId, name: 'מוצר חדש', category: 'finished', unit: C.cartonUnit, unitCost: 0, minQty: 0, productId: newId, active: true });
       }
       if (coll === 'workers') st.workers.push({ id: newId, name: 'עובד חדש', role: '', hourlyCost: 45, active: true });
       if (coll === 'items') st.items.push({ id: newId, name: 'פריט חדש', category: 'raw', unit: 'ק"ג', unitCost: 0, minQty: 0, active: true });
@@ -794,7 +859,7 @@
     const options = [
       ['transactions', 'מחיקת תנועות', 'מוחק דיווחי ייצור, נוכחות ותנועות מלאי. מכונות, מוצרים, עובדים, פריטים והגדרות נשארים.'],
       ['demo', 'חזרה לנתוני דמו', 'מוחק הכל וטוען 30 ימי דמו חדשים עד היום.'],
-      ['empty', 'איפוס מלא', 'מוחק הכל. נשארות רק 4 המכונות והגדרות ברירת מחדל.'],
+      ['empty', 'איפוס מלא', `מוחק הכל. נשארות רק ${C.machines.length} המכונות והגדרות ברירת מחדל.`],
     ];
     api.openModal(`
       <h2 id="reset-title">איפוס נתונים</h2>

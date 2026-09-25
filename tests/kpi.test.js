@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const KPI = require('../js/kpi.js');
 const Seed = require('../js/seed.js');
 const Store = require('../js/store.js');
+const Plan = require('../js/plan.js');
+const CONFIG = require('../js/config.js');
 
 const close = (a, b, eps = 1e-3) => assert.ok(Math.abs(a - b) < eps, `${a} ≉ ${b}`);
 
@@ -136,7 +138,7 @@ test('demo data is deterministic, consistent and realistic', () => {
   const products = ids(a.products);
   const workers = ids(a.workers);
   const items = ids(a.items);
-  assert.equal(machines.size, 4);
+  assert.equal(machines.size, 5);
   for (const l of a.productionLogs) {
     assert.ok(machines.has(l.machineId));
     assert.ok(products.has(l.productId));
@@ -150,7 +152,7 @@ test('demo data is deterministic, consistent and realistic', () => {
     const s = KPI.productionSummary(a.productionLogs.filter((l) => l.machineId === m.id), rate);
     assert.ok(s.oee > 0.5 && s.oee < 0.95, `${m.id} OEE ${s.oee}`);
   }
-  const inv = KPI.inventorySummary(a.items, a.stockMoves, a.productionLogs, '2026-09-25', 14);
+  const inv = KPI.inventorySummary(a.items, a.stockMoves, a.productionLogs, '2026-09-25', 14, { perCarton: Plan.perCartonMap(a.products) });
   inv.rows.forEach((r) => assert.ok(r.qty >= 0, `${r.name} negative stock`));
   assert.ok(inv.belowMin.some((r) => r.id === 'i-chocolate'), 'demo shows a low-stock alert');
 });
@@ -163,7 +165,7 @@ test('reset modes', () => {
   assert.equal(tx.products.length, demo.products.length);
   assert.ok(demo.productionLogs.length > 0, 'original not mutated');
   const empty = Store.resetState(demo, 'empty');
-  assert.equal(empty.machines.length, 4);
+  assert.equal(empty.machines.length, 5);
   assert.equal(empty.products.length, 0);
   const again = Store.resetState(empty, 'demo', '2026-09-25');
   assert.ok(again.productionLogs.length > 100);
@@ -174,6 +176,73 @@ test('import validation', () => {
   assert.equal(Store.parseImport('{"a":1}').ok, false);
   const r = Store.parseImport(JSON.stringify({ machines: [] }));
   assert.equal(r.ok, true);
-  assert.equal(r.state.machines.length, 4);
+  assert.equal(r.state.machines.length, 5);
   assert.deepEqual(r.state.productionLogs, []);
+});
+
+test('shift minutes: 06:00-16:00, extension to 18:00, short Friday, closed Saturday', () => {
+  const shift = { start: '06:00', end: '16:00', extendedEnd: '18:00', fridayEnd: '12:00' };
+  assert.equal(KPI.dayMinutes(shift, '2026-09-24'), 600); // Thursday
+  assert.equal(KPI.dayMinutes(shift, '2026-09-24', { extended: true }), 720);
+  assert.equal(KPI.dayMinutes(shift, '2026-09-25'), 360); // Friday
+  assert.equal(KPI.dayMinutes(shift, '2026-09-26'), 0); // Saturday
+  assert.equal(KPI.workDaysBetween('2026-09-20', '2026-09-26', CONFIG.workDays), 6);
+});
+
+test('finished goods are counted in cartons', () => {
+  const item = { id: 'f1', productId: 'p1' };
+  const moves = [{ itemId: 'f1', date: '2026-09-01', type: 'count', qty: 10 }, { itemId: 'f1', date: '2026-09-02', type: 'out', qty: 4 }];
+  const logs = [{ productId: 'p1', date: '2026-09-02', goodUnits: 600 }];
+  assert.equal(KPI.itemStock(item, moves, logs, '2026-09-02', 60), 16);
+  const d = KPI.dailyByMachine([{ machineId: 'm', productId: 'p1', date: '2026-09-02', goodUnits: 600, plannedMinutes: 60, scrapUnits: 0 }], ['2026-09-02'], { m: 1000 }, ['m'], { p1: 60 });
+  assert.equal(d.cartons.m[0], 10);
+});
+
+test('planDay gives the machine to the products with the fewest days of stock', () => {
+  const products = [
+    { id: 'a', unitsPerCarton: 10, dailyDemand: 10 },
+    { id: 'b', unitsPerCarton: 10, dailyDemand: 10 },
+    { id: 'c', unitsPerCarton: 10, dailyDemand: 10 },
+  ];
+  const proj = { a: 25, b: 5, c: 40 }; // 2.5, 0.5 and 4 days
+  const r = Plan.planDay({ products, proj, minutes: 600, ratePerHour: 600, oee: 1, targetDays: 3, maxProducts: 3, changeover: 15 });
+  assert.deepEqual(r.items.map((i) => i.productId), ['b', 'a'], 'lowest cover first, covered product skipped');
+  assert.equal(r.items[0].cartons, 35); // 3 days target + today's 10 − 5 in stock
+  assert.equal(r.items[1].cartons, 15);
+  assert.ok(r.usedMinutes <= 600);
+  assert.deepEqual(proj, { a: 25, b: 5, c: 40 }, 'input not mutated');
+});
+
+test('planDay respects machine capacity', () => {
+  const products = [{ id: 'a', unitsPerCarton: 10, dailyDemand: 100 }];
+  const r = Plan.planDay({ products, proj: { a: 0 }, minutes: 75, ratePerHour: 600, oee: 1, targetDays: 3, maxProducts: 3, changeover: 15 });
+  assert.equal(r.items[0].cartons, 60); // 60 min × 1 carton/min
+  assert.ok(r.usedMinutes <= 75);
+});
+
+test('weekly plan: 6 working days, priorities, extension to 18:00 when short', () => {
+  const s = Seed.demoState('2026-09-25');
+  const p = Plan.build(s, '2026-09-25');
+  assert.equal(p.dates.length, 6);
+  p.dates.forEach((d) => assert.ok(KPI.isWorkDay(d, CONFIG.workDays)));
+  assert.equal(p.rows.length, s.products.length);
+  for (let i = 1; i < p.rows.length; i++) assert.ok(p.rows[i].coverNow >= p.rows[i - 1].coverNow, 'sorted by days of stock');
+  assert.ok(p.totalCartons > 0);
+  for (const day of p.days) {
+    for (const [mid, m] of Object.entries(day.machines)) {
+      assert.ok(m.used <= m.capacity + 1, 'within capacity');
+      m.items.forEach((it) => assert.equal(s.products.find((x) => x.id === it.productId).machineId, mid));
+    }
+  }
+  assert.ok(p.days.some((d) => Object.values(d.machines).some((m) => m.extended)), 'demo needs at least one extended day');
+});
+
+test('v1 data migrates: demo keeps working, plant name and product fields filled', () => {
+  const old = { version: 1, meta: { source: 'import' }, settings: { plantName: 'מאפייה – קו ייצור', targets: {} }, machines: [{ id: 'rondo', name: 'רונדו', ratePerHour: 1800 }], products: [{ id: 'x', name: 'X', machineId: 'rondo' }] };
+  const r = Store.parseImport(JSON.stringify(old));
+  assert.equal(r.ok, true);
+  assert.equal(r.state.settings.plantName, 'ארומה - מאפים');
+  assert.equal(r.state.products[0].unitsPerCarton, 1);
+  assert.equal(r.state.settings.shift.end, '16:00');
+  assert.equal(r.state.version, 2);
 });

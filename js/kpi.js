@@ -45,6 +45,30 @@
     return date >= r.from && date <= r.to;
   }
 
+  // ---------- shift / work days ----------
+  function timeToMinutes(hhmm) {
+    const [h, m] = String(hhmm || '0:0').split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  }
+
+  function isWorkDay(date, workDays) {
+    return (workDays || [0, 1, 2, 3, 4, 5]).includes(parseISO(date).getDay());
+  }
+
+  // Planned production minutes on a date. shift: { start, end, extendedEnd, fridayEnd }.
+  function dayMinutes(shift, date, opts) {
+    opts = opts || {};
+    if (!isWorkDay(date, opts.workDays)) return 0;
+    const start = timeToMinutes(shift.start);
+    const short = parseISO(date).getDay() === (opts.shortDay == null ? 5 : opts.shortDay);
+    const end = short ? timeToMinutes(shift.fridayEnd || shift.end) : timeToMinutes(opts.extended ? shift.extendedEnd : shift.end);
+    return Math.max(0, end - start);
+  }
+
+  function workDaysBetween(from, to, workDays) {
+    return dateList(from, to).filter((d) => isWorkDay(d, workDays)).length;
+  }
+
   // ---------- helpers ----------
   const sum = (arr, fn) => arr.reduce((acc, x) => acc + (fn ? fn(x) : x), 0);
   const ratio = (a, b) => (b > 0 ? a / b : null);
@@ -130,22 +154,21 @@
     return m;
   }
 
-  // Per-day series for each machine: { oee: {id: [..]}, good: {id: [..]} }
-  function dailyByMachine(logs, dates, rateById, machineIds) {
+  const cartonsOf = (log, perCarton) => (Number(log.goodUnits) || 0) / ((perCarton && perCarton[log.productId]) || 1);
+
+  // Per-day series for each machine: { oee, good, cartons } each { id: [..] }
+  function dailyByMachine(logs, dates, rateById, machineIds, perCarton) {
     const byKey = groupBy(logs, (l) => `${l.machineId}|${l.date}`);
     const oee = {};
     const good = {};
+    const cartons = {};
     for (const id of machineIds) {
-      oee[id] = dates.map((d) => {
-        const rows = byKey.get(`${id}|${d}`);
-        return rows ? productionSummary(rows, rateById).oee : null;
-      });
-      good[id] = dates.map((d) => {
-        const rows = byKey.get(`${id}|${d}`);
-        return rows ? sum(rows, (r) => Number(r.goodUnits) || 0) : 0;
-      });
+      const rowsFor = (d) => byKey.get(`${id}|${d}`);
+      oee[id] = dates.map((d) => (rowsFor(d) ? productionSummary(rowsFor(d), rateById).oee : null));
+      good[id] = dates.map((d) => (rowsFor(d) ? sum(rowsFor(d), (r) => Number(r.goodUnits) || 0) : 0));
+      cartons[id] = dates.map((d) => (rowsFor(d) ? sum(rowsFor(d), (r) => cartonsOf(r, perCarton)) : 0));
     }
-    return { oee, good };
+    return { oee, good, cartons };
   }
 
   // ---------- workers ----------
@@ -230,16 +253,18 @@
   const ORDER = { count: 1 };
 
   // Events that change an item's quantity, up to and including asOf.
-  function itemEvents(item, moves, prodLogs, asOf) {
+  // Finished goods are kept in cartons: production adds goodUnits / unitsPerCarton.
+  function itemEvents(item, moves, prodLogs, asOf, unitsPerCarton) {
     const ev = [];
     for (const m of moves) {
       if (m.itemId !== item.id || (asOf && m.date > asOf)) continue;
       ev.push({ date: m.date, type: m.type, qty: Number(m.qty) || 0, at: m.createdAt || '' });
     }
     if (item.productId) {
+      const per = Number(unitsPerCarton) || 1;
       for (const l of prodLogs) {
         if (l.productId !== item.productId || (asOf && l.date > asOf)) continue;
-        ev.push({ date: l.date, type: 'in', qty: Number(l.goodUnits) || 0, at: l.createdAt || '' });
+        ev.push({ date: l.date, type: 'in', qty: (Number(l.goodUnits) || 0) / per, at: l.createdAt || '' });
       }
     }
     // Same date: movements first, count last (count = end-of-day stock).
@@ -257,24 +282,28 @@
     return q;
   }
 
-  function itemStock(item, moves, prodLogs, asOf) {
-    return applyEvents(itemEvents(item, moves, prodLogs, asOf));
+  function itemStock(item, moves, prodLogs, asOf, unitsPerCarton) {
+    return applyEvents(itemEvents(item, moves, prodLogs, asOf, unitsPerCarton));
   }
 
-  function avgDailyUsage(moves, asOf, lookbackDays) {
+  // Average daily outflow (out + scrap). With workDays, divides by working days only.
+  function avgDailyUsage(moves, asOf, lookbackDays, workDays) {
     const from = addDays(asOf, -(lookbackDays - 1));
     const used = sum(moves.filter((m) => (m.type === 'out' || m.type === 'scrap') && m.date >= from && m.date <= asOf), (m) => Number(m.qty) || 0);
-    return used / lookbackDays;
+    const days = workDays ? workDaysBetween(from, asOf, workDays) : lookbackDays;
+    return days > 0 ? used / days : 0;
   }
 
-  function inventorySummary(items, moves, logs, asOf, lookbackDays) {
+  // opts: { perCarton: {productId: units}, workDays: [dow] }
+  function inventorySummary(items, moves, logs, asOf, lookbackDays, opts) {
+    opts = opts || {};
     const movesByItem = groupBy(moves, (m) => m.itemId);
     const logsByProduct = groupBy(logs, (l) => l.productId);
     const rows = items.map((it) => {
       const im = movesByItem.get(it.id) || [];
       const pl = it.productId ? logsByProduct.get(it.productId) || [] : [];
-      const qty = itemStock(it, im, pl, asOf);
-      const avg = avgDailyUsage(im, asOf, lookbackDays);
+      const qty = itemStock(it, im, pl, asOf, it.productId && opts.perCarton ? opts.perCarton[it.productId] : 1);
+      const avg = avgDailyUsage(im, asOf, lookbackDays, opts.workDays);
       const min = Number(it.minQty) || 0;
       return {
         id: it.id, name: it.name, category: it.category, unit: it.unit, active: it.active !== false,
@@ -313,8 +342,9 @@
 
   return {
     toISO, parseISO, addDays, dateList, periodRange, previousRange, inRange,
+    timeToMinutes, isWorkDay, dayMinutes, workDaysBetween,
     statusHigh, statusLow, groupBy,
-    logDowntime, sumProduction, productionRatios, productionSummary, dailyByMachine,
+    logDowntime, sumProduction, productionRatios, productionSummary, dailyByMachine, cartonsOf,
     laborCost, attendanceSummary, workerSummary,
     productSummary,
     itemStock, avgDailyUsage, inventorySummary, countAccuracy, moveTotals,

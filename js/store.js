@@ -22,17 +22,31 @@
     }
   }
 
+  const OLD_PLANT_NAME = 'מאפייה – קו ייצור';
+
   // Fill gaps so older or hand-edited files still load.
   function normalize(s) {
     if (!s || typeof s !== 'object') throw new Error('הקובץ לא מכיל נתוני דשבורד');
     if (!Array.isArray(s.machines)) throw new Error('חסרה רשימת מכונות בקובץ');
     for (const c of COLLECTIONS) if (!Array.isArray(s[c])) s[c] = [];
-    s.version = s.version || CONFIG.schemaVersion;
     s.meta = s.meta || { createdAt: new Date().toISOString(), source: 'import' };
     const d = CONFIG.defaultSettings;
-    s.settings = Object.assign({}, d, s.settings || {});
-    s.settings.targets = Object.assign({}, d.targets, (s.settings && s.settings.targets) || {});
-    // The 4 machines always exist.
+    const cur = s.settings || {};
+    s.settings = Object.assign({}, d, cur, {
+      targets: Object.assign({}, d.targets, cur.targets || {}),
+      shift: Object.assign({}, d.shift, cur.shift || {}),
+      planning: Object.assign({}, d.planning, cur.planning || {}),
+    });
+    if (!s.version || s.version < 2) {
+      // v1 → v2: one shift, cartons, customer demand, bread machine.
+      if (s.settings.plantName === OLD_PLANT_NAME) s.settings.plantName = d.plantName;
+      for (const p of s.products) {
+        if (p.unitsPerCarton == null) p.unitsPerCarton = 1;
+        if (p.dailyDemand == null) p.dailyDemand = 0;
+      }
+    }
+    s.version = CONFIG.schemaVersion;
+    // All configured machines always exist.
     for (const m of CONFIG.machines) {
       if (!s.machines.find((x) => x.id === m.id)) s.machines.push(Object.assign({}, m, { active: true }));
     }
@@ -44,7 +58,16 @@
     if (ls) {
       try {
         const raw = ls.getItem(CONFIG.storageKey);
-        if (raw) return { state: normalize(JSON.parse(raw)), persisted: true };
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          // Old demo data describes other products: replace it with the new demo.
+          const oldDemo = (!parsed.version || parsed.version < CONFIG.schemaVersion) && parsed.meta && parsed.meta.source === 'demo';
+          if (!oldDemo) {
+            const state = normalize(parsed);
+            save(state);
+            return { state, persisted: true };
+          }
+        }
       } catch (e) {
         /* corrupted data: fall through to demo */
       }

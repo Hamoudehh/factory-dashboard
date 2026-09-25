@@ -1,12 +1,13 @@
-/* Deterministic demo data: 30 days of a bakery with 4 machines, ending today. */
+/* Deterministic demo data: 30 days of a bakery with 5 machines, ending today.
+   Production each day follows the same planner the dashboard uses (lowest days of stock first). */
 (function (root, factory) {
   const deps = typeof module === 'object' && module.exports
-    ? { CONFIG: require('./config.js'), KPI: require('./kpi.js') }
-    : { CONFIG: root.CONFIG, KPI: root.KPI };
-  const mod = factory(deps.CONFIG, deps.KPI);
+    ? { CONFIG: require('./config.js'), KPI: require('./kpi.js'), Plan: require('./plan.js') }
+    : { CONFIG: root.CONFIG, KPI: root.KPI, Plan: root.Plan };
+  const mod = factory(deps.CONFIG, deps.KPI, deps.Plan);
   if (typeof module === 'object' && module.exports) module.exports = mod;
   else root.Seed = mod;
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (CONFIG, KPI) {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (CONFIG, KPI, Plan) {
   function mulberry32(a) {
     return function () {
       a |= 0;
@@ -34,39 +35,52 @@
     };
   }
 
+  // price / cost per unit (₪), unitsPerCarton, dailyDemand in cartons per working day
   const PRODUCTS = [
-    { id: 'p-croissant-butter', name: 'קרואסון חמאה', machineId: 'rondo', price: 3.2, cost: 1.4, minQty: 4000 },
-    { id: 'p-croissant-choc', name: 'קרואסון שוקולד', machineId: 'rondo', price: 3.6, cost: 1.7, minQty: 4000 },
-    { id: 'p-cheese-pastry', name: 'מאפה גבינה', machineId: 'rondo', price: 4.0, cost: 1.9, minQty: 4000 },
-    { id: 'p-borekas-cheese', name: 'בורקס גבינה', machineId: 'krumster', price: 2.8, cost: 1.2, minQty: 4000 },
-    { id: 'p-borekas-potato', name: 'בורקס תפוחי אדמה', machineId: 'krumster', price: 2.5, cost: 1.0, minQty: 4000 },
-    { id: 'p-filo-spinach', name: 'מאפה פילו תרד', machineId: 'filo', price: 4.5, cost: 2.1, minQty: 2000 },
-    { id: 'p-filo-sheets', name: 'עלי פילו 500 גרם', machineId: 'filo', price: 9.0, cost: 4.2, minQty: 2000 },
-    { id: 'p-rugelach', name: 'רוגלך שוקולד', machineId: 'kanol', price: 1.2, cost: 0.5, minQty: 6000 },
-    { id: 'p-strudel', name: 'שטרודל תפוחים', machineId: 'kanol', price: 6.0, cost: 2.8, minQty: 6000 },
+    { id: 'p-croissant-choc', name: 'קרואסון שוקולד', machineId: 'rondo', price: 3.6, cost: 1.7, unitsPerCarton: 60, dailyDemand: 70 },
+    { id: 'p-danish-cinnamon', name: 'דייניש קינמון', machineId: 'rondo', price: 4.2, cost: 1.9, unitsPerCarton: 48, dailyDemand: 45 },
+    { id: 'p-danish-poppy', name: 'דייניש פרג', machineId: 'rondo', price: 4.2, cost: 2.0, unitsPerCarton: 48, dailyDemand: 35 },
+    { id: 'p-yeast-cheese', name: 'שמרים גבינה', machineId: 'rondo', price: 4.5, cost: 2.1, unitsPerCarton: 40, dailyDemand: 40 },
+    { id: 'p-croissant-butter', name: 'קרואסון חמאה', machineId: 'krumster', price: 3.4, cost: 1.5, unitsPerCarton: 60, dailyDemand: 80 },
+    { id: 'p-rugelach', name: 'רוגלך', machineId: 'krumster', price: 1.2, cost: 0.5, unitsPerCarton: 150, dailyDemand: 30 },
+    { id: 'p-filo-cheese', name: 'פילו גבינה', machineId: 'filo', price: 5.5, cost: 2.5, unitsPerCarton: 36, dailyDemand: 80 },
+    { id: 'p-filo-apple', name: 'פילו תפוחים', machineId: 'filo', price: 5.0, cost: 2.2, unitsPerCarton: 36, dailyDemand: 65 },
+    { id: 'p-borekas-cheese', name: 'בורקס גבינה', machineId: 'kanol', price: 2.8, cost: 1.2, unitsPerCarton: 80, dailyDemand: 35 },
+    { id: 'p-borekas-potato', name: 'בורקס תפוח אדמה', machineId: 'kanol', price: 2.5, cost: 1.0, unitsPerCarton: 80, dailyDemand: 30 },
+    { id: 'p-bulgarian', name: 'מאפה בולגרית', machineId: 'kanol', price: 4.0, cost: 1.8, unitsPerCarton: 60, dailyDemand: 20 },
+    { id: 'p-gviniyot', name: 'גביניות', machineId: 'kanol', price: 1.8, cost: 0.8, unitsPerCarton: 100, dailyDemand: 15 },
+    { id: 'p-cookies-dates', name: 'עוגיות תמרים', machineId: 'kanol', price: 0.8, cost: 0.3, unitsPerCarton: 200, dailyDemand: 5 },
+    { id: 'p-cookies-poppy', name: 'עוגיות פרג', machineId: 'kanol', price: 0.8, cost: 0.3, unitsPerCarton: 200, dailyDemand: 5 },
+    { id: 'p-cookies-halva', name: 'עוגיות חלבה', machineId: 'kanol', price: 0.9, cost: 0.35, unitsPerCarton: 200, dailyDemand: 6 },
+    { id: 'p-strudel', name: 'שטרודל תפוחים', machineId: 'kanol', price: 18, cost: 7.5, unitsPerCarton: 12, dailyDemand: 40 },
+    { id: 'p-bread-white', name: 'לחם לבן', machineId: 'bread', price: 7, cost: 2.5, unitsPerCarton: 12, dailyDemand: 220 },
+    { id: 'p-bread-whole', name: 'לחם מלא', machineId: 'bread', price: 9, cost: 3.2, unitsPerCarton: 12, dailyDemand: 160 },
+    { id: 'p-rolls', name: 'לחמניות', machineId: 'bread', price: 1.5, cost: 0.5, unitsPerCarton: 60, dailyDemand: 50 },
   ];
 
-  // team: machine|shift the worker belongs to
   const WORKERS = [
-    { id: 'w01', name: 'אחמד עודה', role: 'מפעיל', hourlyCost: 58, team: 'rondo|morning' },
-    { id: 'w02', name: 'יוסי כהן', role: 'עוזר ייצור', hourlyCost: 46, team: 'rondo|morning' },
-    { id: 'w03', name: 'נאדיה סלאמה', role: 'אורזת', hourlyCost: 42, team: 'rondo|morning' },
-    { id: 'w04', name: 'אורי מזרחי', role: 'מפעיל', hourlyCost: 56, team: 'rondo|evening' },
-    { id: 'w05', name: 'סמיר בדראן', role: 'עוזר ייצור', hourlyCost: 45, team: 'rondo|evening' },
-    { id: 'w06', name: 'מוחמד חטיב', role: 'מפעיל', hourlyCost: 57, team: 'krumster|morning' },
-    { id: 'w07', name: 'דנה לוי', role: 'אורזת', hourlyCost: 43, team: 'krumster|morning' },
-    { id: 'w08', name: 'איגור פטרוב', role: 'מפעיל', hourlyCost: 55, team: 'krumster|evening' },
-    { id: 'w09', name: 'מרים אבו רמילה', role: 'עוזרת ייצור', hourlyCost: 44, team: 'krumster|evening' },
-    { id: 'w10', name: 'ראמי דאוד', role: 'מפעיל', hourlyCost: 58, team: 'filo|morning' },
-    { id: 'w11', name: 'טל רוזן', role: 'בצקאי', hourlyCost: 52, team: 'filo|morning' },
-    { id: 'w12', name: 'חוסאם ג\'אבר', role: 'מפעיל', hourlyCost: 56, team: 'kanol|morning' },
-    { id: 'w13', name: 'אלנה ברקוביץ', role: 'אורזת', hourlyCost: 42, team: 'kanol|morning' },
-    { id: 'w14', name: 'וליד קאסם', role: 'מפעיל', hourlyCost: 55, team: 'kanol|evening' },
+    { id: 'w01', name: 'אחמד עודה', role: 'מפעיל', hourlyCost: 58, machineId: 'rondo' },
+    { id: 'w02', name: 'יוסי כהן', role: 'עוזר ייצור', hourlyCost: 46, machineId: 'rondo' },
+    { id: 'w03', name: 'נאדיה סלאמה', role: 'אורזת', hourlyCost: 42, machineId: 'rondo' },
+    { id: 'w04', name: 'אורי מזרחי', role: 'בצקאי', hourlyCost: 52, machineId: 'rondo' },
+    { id: 'w05', name: 'סמיר בדראן', role: 'מפעיל', hourlyCost: 55, machineId: 'krumster' },
+    { id: 'w06', name: 'מוחמד חטיב', role: 'עוזר ייצור', hourlyCost: 47, machineId: 'krumster' },
+    { id: 'w07', name: 'דנה לוי', role: 'אורזת', hourlyCost: 43, machineId: 'krumster' },
+    { id: 'w08', name: 'ראמי דאוד', role: 'מפעיל', hourlyCost: 58, machineId: 'filo' },
+    { id: 'w09', name: 'טל רוזן', role: 'בצקאי', hourlyCost: 52, machineId: 'filo' },
+    { id: 'w10', name: 'מרים אבו רמילה', role: 'אורזת', hourlyCost: 43, machineId: 'filo' },
+    { id: 'w11', name: 'חוסאם ג\'אבר', role: 'מפעיל', hourlyCost: 56, machineId: 'kanol' },
+    { id: 'w12', name: 'אלנה ברקוביץ', role: 'אורזת', hourlyCost: 42, machineId: 'kanol' },
+    { id: 'w13', name: 'איגור פטרוב', role: 'עוזר ייצור', hourlyCost: 46, machineId: 'kanol' },
+    { id: 'w14', name: 'וליד קאסם', role: 'מפעיל', hourlyCost: 55, machineId: 'bread' },
+    { id: 'w15', name: 'ג\'מאל נסאר', role: 'אופה', hourlyCost: 54, machineId: 'bread' },
+    { id: 'w16', name: 'רונית אזולאי', role: 'אורזת', hourlyCost: 42, machineId: 'bread' },
   ];
 
   // dailyUse: typical consumption on a full production day
   const RAW_ITEMS = [
-    { id: 'i-flour', name: 'קמח לבן', category: 'raw', unit: 'ק"ג', unitCost: 2.4, minQty: 1500, dailyUse: 520 },
+    { id: 'i-flour', name: 'קמח לבן', category: 'raw', unit: 'ק"ג', unitCost: 2.4, minQty: 1500, dailyUse: 480 },
+    { id: 'i-flour-whole', name: 'קמח מלא', category: 'raw', unit: 'ק"ג', unitCost: 3.1, minQty: 400, dailyUse: 140 },
     { id: 'i-butter', name: 'חמאה', category: 'raw', unit: 'ק"ג', unitCost: 38, minQty: 160, dailyUse: 55 },
     { id: 'i-margarine', name: 'מרגרינה', category: 'raw', unit: 'ק"ג', unitCost: 12, minQty: 200, dailyUse: 70 },
     { id: 'i-sugar', name: 'סוכר', category: 'raw', unit: 'ק"ג', unitCost: 3.5, minQty: 180, dailyUse: 60 },
@@ -75,18 +89,16 @@
     { id: 'i-cheese', name: 'גבינה בולגרית', category: 'raw', unit: 'ק"ג', unitCost: 28, minQty: 100, dailyUse: 35 },
     { id: 'i-chocolate', name: 'שוקולד', category: 'raw', unit: 'ק"ג', unitCost: 45, minQty: 80, dailyUse: 26 },
     { id: 'i-potato', name: 'תפוחי אדמה', category: 'raw', unit: 'ק"ג', unitCost: 3, minQty: 140, dailyUse: 45 },
-    { id: 'i-spinach', name: 'תרד קפוא', category: 'raw', unit: 'ק"ג', unitCost: 14, minQty: 55, dailyUse: 18 },
-    { id: 'i-carton', name: 'קרטון משלוח', category: 'packaging', unit: 'יח\'', unitCost: 2.2, minQty: 550, dailyUse: 180 },
-    { id: 'i-bags', name: 'שקית אריזה', category: 'packaging', unit: 'יח\'', unitCost: 0.15, minQty: 6500, dailyUse: 2200 },
+    { id: 'i-apples', name: 'תפוחים', category: 'raw', unit: 'ק"ג', unitCost: 6, minQty: 150, dailyUse: 50 },
+    { id: 'i-dates', name: 'ממרח תמרים', category: 'raw', unit: 'ק"ג', unitCost: 16, minQty: 40, dailyUse: 12 },
+    { id: 'i-poppy', name: 'פרג', category: 'raw', unit: 'ק"ג', unitCost: 22, minQty: 30, dailyUse: 10 },
+    { id: 'i-halva', name: 'חלבה', category: 'raw', unit: 'ק"ג', unitCost: 26, minQty: 25, dailyUse: 8 },
+    { id: 'i-cinnamon', name: 'קינמון', category: 'raw', unit: 'ק"ג', unitCost: 40, minQty: 10, dailyUse: 3 },
+    { id: 'i-carton', name: 'קרטון משלוח', category: 'packaging', unit: 'יח\'', unitCost: 2.2, minQty: 3000, dailyUse: 1050 },
+    { id: 'i-bags', name: 'שקית אריזה', category: 'packaging', unit: 'יח\'', unitCost: 0.15, minQty: 20000, dailyUse: 7000 },
   ];
   const LOW_STOCK_STORY = ['i-chocolate', 'i-yeast'];
-
-  const SCHEDULE = {
-    rondo: ['morning', 'evening'],
-    krumster: ['morning', 'evening'],
-    filo: ['morning'],
-    kanol: ['morning', 'evening'],
-  };
+  const EXTENDS = ['krumster', 'kanol', 'bread']; // machines that often run to 18:00
 
   function demoState(today, days) {
     days = days || 30;
@@ -94,22 +106,21 @@
     const rnd = mulberry32(20260925);
     const r = (a, b) => a + (b - a) * rnd();
     const ri = (a, b) => Math.round(r(a, b));
-    const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
 
     const s = baseState('demo');
-    s.products = PRODUCTS.map(({ minQty, ...p }) => Object.assign({ active: true }, p));
-    s.workers = WORKERS.map(({ team, ...w }) => Object.assign({ active: true }, w));
+    const shift = s.settings.shift;
+    const P = s.settings.planning;
+    s.products = PRODUCTS.map((p) => Object.assign({ active: true }, p));
+    s.workers = WORKERS.map(({ machineId, ...w }) => Object.assign({ active: true }, w));
     s.items = RAW_ITEMS.map(({ dailyUse, ...it }) => Object.assign({ active: true }, it)).concat(
       PRODUCTS.map((p) => ({
-        id: 'f-' + p.id.slice(2), name: p.name, category: 'finished', unit: 'יח\'',
-        unitCost: p.cost, minQty: p.minQty, productId: p.id, active: true,
+        id: 'f-' + p.id.slice(2), name: p.name, category: 'finished', unit: CONFIG.cartonUnit,
+        unitCost: Math.round(p.cost * p.unitsPerCarton * 100) / 100, minQty: Math.round(p.dailyDemand * 1.5),
+        productId: p.id, active: true,
       }))
     );
-    const rate = Object.fromEntries(s.machines.map((m) => [m.id, m.ratePerHour]));
-    const teams = {};
-    for (const w of WORKERS) (teams[w.team] = teams[w.team] || []).push(w.id);
-    const productsByMachine = {};
-    for (const p of PRODUCTS) (productsByMachine[p.machineId] = productsByMachine[p.machineId] || []).push(p.id);
+    const fin = Object.fromEntries(s.items.filter((i) => i.productId).map((i) => [i.productId, i.id]));
+    const machines = Object.fromEntries(s.machines.map((m) => [m.id, m]));
 
     let seq = 0;
     const id = (prefix) => `${prefix}-${(++seq).toString(36)}`;
@@ -117,27 +128,31 @@
     const at = (date, hour) => `${date}T${String(date === today ? 0 : hour).padStart(2, '0')}:00:00`;
 
     const from = KPI.addDays(today, -(days - 1));
-    const stock = {};
+    const stock = {}; // raw: item units, finished: cartons by productId
     const pending = {};
 
     // Opening stock: counted the day before the period starts.
     const opening = KPI.addDays(from, -1);
-    for (const it of s.items) {
-      const qty = it.category === 'finished' ? Math.round(it.minQty * r(1.2, 1.8)) : Math.round(it.minQty * r(2, 3));
-      stock[it.id] = qty;
-      s.stockMoves.push({ id: id('m'), date: opening, itemId: it.id, type: 'count', qty, expectedQty: null, note: 'ספירת פתיחה', createdAt: at(opening, 20) });
+    for (const it of RAW_ITEMS) {
+      stock[it.id] = Math.round(it.minQty * r(2, 3));
+      s.stockMoves.push({ id: id('m'), date: opening, itemId: it.id, type: 'count', qty: stock[it.id], expectedQty: null, note: 'ספירת פתיחה', createdAt: at(opening, 20) });
+    }
+    for (const p of PRODUCTS) {
+      stock[p.id] = Math.round(p.dailyDemand * r(2, 3.5));
+      s.stockMoves.push({ id: id('m'), date: opening, itemId: fin[p.id], type: 'count', qty: stock[p.id], expectedQty: null, note: 'ספירת פתיחה', createdAt: at(opening, 20) });
     }
 
     const dates = KPI.dateList(from, today);
     let lastWorkDay = null;
     dates.forEach((date, dayIdx) => {
+      if (!KPI.isWorkDay(date, CONFIG.workDays)) return;
       const dow = KPI.parseISO(date).getDay();
-      if (dow === 6) return; // Saturday
-      const shortDay = dow === 5 || date === today;
-      const recent = dayIdx >= dates.length - 10;
+      const short = dow === CONFIG.shortDay;
+      const recent = dayIdx >= dates.length - 8;
       lastWorkDay = date;
+      const baseMinutes = KPI.dayMinutes(shift, date, { workDays: CONFIG.workDays, shortDay: CONFIG.shortDay });
 
-      // Receipts that arrive today
+      // Raw material receipts that arrive today
       for (const it of RAW_ITEMS) {
         if (pending[it.id] && pending[it.id] <= date) {
           const qty = Math.round((it.minQty * 2.2) / 10) * 10;
@@ -147,58 +162,74 @@
         }
       }
 
-      const producedToday = {};
-      s.machines.forEach((m) => {
-        SCHEDULE[m.id].forEach((shift, shiftIdx) => {
-          if (shortDay && shift !== 'morning') return;
-          const team = teams[`${m.id}|${shift}`] || [];
-          const present = [];
-          for (const wid of team) {
-            const x = rnd();
-            const status = x < 0.025 ? 'sick' : x < 0.04 ? 'absent' : x < 0.07 ? 'vacation' : 'present';
-            const ot = status === 'present' && rnd() < 0.15 ? pick([1, 1.5, 2]) : 0;
-            s.attendance.push({
-              id: id('a'), date, shift, workerId: wid, status,
-              hours: status === 'present' ? (shortDay ? 6 : 8) : 0, overtimeHours: ot,
-              machineId: m.id, createdAt: at(date, 15),
-            });
-            if (status === 'present') present.push(wid);
-          }
+      for (const m of s.machines) {
+        const extended = !short && EXTENDS.includes(m.id) && rnd() < 0.35;
+        const minutes = extended ? KPI.dayMinutes(shift, date, { extended: true, workDays: CONFIG.workDays, shortDay: CONFIG.shortDay }) : baseMinutes;
+        const kanolTrouble = m.id === 'kanol' && recent;
 
-          const plist = productsByMachine[m.id];
-          const productId = plist[(dayIdx + shiftIdx) % plist.length];
-          const plannedMinutes = shortDay ? 360 : 480;
-          const downtimes = [
-            { reason: 'changeover', minutes: ri(8, 22) },
-            { reason: 'cleaning', minutes: ri(10, 20) },
-          ];
-          const breakdownProb = m.id === 'kanol' && recent ? 0.55 : 0.15;
-          if (rnd() < breakdownProb) downtimes.push({ reason: 'breakdown', minutes: ri(20, m.id === 'kanol' && recent ? 120 : 75) });
-          if (rnd() < 0.08) downtimes.push({ reason: 'material', minutes: ri(10, 40) });
-          if (present.length < team.length && rnd() < 0.6) downtimes.push({ reason: 'staff', minutes: ri(20, 60) });
-
-          const down = Math.min(plannedMinutes - 60, downtimes.reduce((a, d) => a + d.minutes, 0));
-          const run = plannedMinutes - down;
-          let perf = m.id === 'kanol' && recent ? r(0.8, 0.9) : r(0.9, 0.99);
-          if (present.length < team.length) perf *= 0.9;
-          const total = Math.round(((rate[m.id] * run) / 60) * perf);
-          const scrapRate = m.id === 'filo' ? r(0.03, 0.06) : r(0.012, 0.042);
-          const scrapUnits = Math.round(total * scrapRate);
-          const goodUnits = total - scrapUnits;
-          const plannedUnits = Math.round((rate[m.id] * (plannedMinutes / 60) * 0.82) / 100) * 100;
-
-          s.productionLogs.push({
-            id: id('l'), date, shift, machineId: m.id, productId,
-            plannedUnits, goodUnits, scrapUnits, plannedMinutes, downtimes,
-            workerIds: present, note: '', createdAt: at(date, shift === 'morning' ? 14 : 22),
+        // Attendance: the machine's team, one shift. Overtime when the machine runs to 18:00.
+        const present = [];
+        for (const w of WORKERS.filter((x) => x.machineId === m.id)) {
+          const x = rnd();
+          const status = x < 0.025 ? 'sick' : x < 0.04 ? 'absent' : x < 0.065 ? 'vacation' : 'present';
+          const isIn = status === 'present';
+          s.attendance.push({
+            id: id('a'), date, shift: 'morning', workerId: w.id, status,
+            hours: isIn ? baseMinutes / 60 : 0, overtimeHours: isIn && extended ? (minutes - baseMinutes) / 60 : 0,
+            machineId: m.id, createdAt: at(date, 16),
           });
-          producedToday[productId] = (producedToday[productId] || 0) + goodUnits;
+          if (isIn) present.push(w.id);
+        }
+        const shortStaffed = present.length < WORKERS.filter((x) => x.machineId === m.id).length;
+
+        const plan = Plan.planDay({
+          products: s.products.filter((p) => p.machineId === m.id), proj: stock, minutes,
+          ratePerHour: m.ratePerHour, oee: 0.8, targetDays: P.targetDays, maxProducts: P.maxProductsPerDay, changeover: P.changeoverMinutes,
         });
-      });
+        plan.items.forEach((it, idx) => {
+          const last = idx === plan.items.length - 1;
+          const downtimes = [{ reason: 'changeover', minutes: ri(10, 22) }];
+          if (last) downtimes.push({ reason: 'cleaning', minutes: ri(15, 25) });
+          if (rnd() < (kanolTrouble ? 0.3 : 0.1)) downtimes.push({ reason: 'breakdown', minutes: ri(20, kanolTrouble ? 80 : 70) });
+          if (rnd() < 0.05) downtimes.push({ reason: 'material', minutes: ri(10, 30) });
+          if (shortStaffed && rnd() < 0.5) downtimes.push({ reason: 'staff', minutes: ri(15, 45) });
+          const down = Math.min(it.minutes - 20, downtimes.reduce((a, d) => a + d.minutes, 0));
+          const run = it.minutes - down;
+          let perf = kanolTrouble ? r(0.84, 0.93) : r(0.9, 0.99);
+          if (shortStaffed) perf *= 0.92;
+          const total = Math.round(((machines[m.id].ratePerHour * run) / 60) * perf);
+          const scrapUnits = Math.round(total * (m.id === 'filo' ? r(0.03, 0.055) : r(0.012, 0.04)));
+          const goodUnits = total - scrapUnits;
+          const p = s.products.find((x) => x.id === it.productId);
+          stock[p.id] += goodUnits / p.unitsPerCarton;
+          s.productionLogs.push({
+            id: id('l'), date, shift: 'morning', machineId: m.id, productId: p.id,
+            plannedUnits: it.units, goodUnits, scrapUnits, plannedMinutes: it.minutes, downtimes,
+            workerIds: present.slice(), note: '', createdAt: at(date, extended ? 18 : 16),
+          });
+        });
+      }
+
+      // Customers take their daily cartons (a demand spike on gviniyot in the last days)
+      for (const p of PRODUCTS) {
+        const spike = p.id === 'p-gviniyot' && dayIdx >= dates.length - 5 ? 1.7 : 1;
+        const shipped = Math.min(Math.floor(stock[p.id]), Math.round(p.dailyDemand * r(0.88, 1.12) * spike));
+        if (shipped > 0) {
+          stock[p.id] -= shipped;
+          s.stockMoves.push({ id: id('m'), date, itemId: fin[p.id], type: 'out', qty: shipped, note: 'משלוח לסניפים', createdAt: at(date, 17) });
+        }
+        if (rnd() < 0.04) {
+          const q = Math.min(Math.floor(stock[p.id]), ri(1, 4));
+          if (q > 0) {
+            stock[p.id] -= q;
+            s.stockMoves.push({ id: id('m'), date, itemId: fin[p.id], type: 'scrap', qty: q, note: 'פג תוקף', createdAt: at(date, 17) });
+          }
+        }
+      }
 
       // Raw material and packaging consumption
       for (const it of RAW_ITEMS) {
-        const qty = Math.min(stock[it.id], Math.max(1, Math.round(it.dailyUse * r(0.85, 1.15) * (shortDay ? 0.6 : 1))));
+        const qty = Math.min(stock[it.id], Math.max(1, Math.round(it.dailyUse * r(0.85, 1.15) * (short ? 0.6 : 1))));
         if (qty <= 0) continue;
         stock[it.id] -= qty;
         s.stockMoves.push({ id: id('m'), date, itemId: it.id, type: 'out', qty, note: 'הוצאה לייצור', createdAt: at(date, 8) });
@@ -206,31 +237,15 @@
         if (!pending[it.id] && !noMoreOrders && stock[it.id] < it.minQty * 1.7) pending[it.id] = KPI.addDays(date, 1);
       }
 
-      // Finished goods: production in, shipments out, occasional scrap
-      for (const it of s.items.filter((x) => x.category === 'finished')) {
-        const made = producedToday[it.productId] || 0;
-        stock[it.id] += made;
-        const shipped = Math.round(Math.min(stock[it.id] - it.minQty * 0.5, made * r(0.92, 1.06)));
-        if (shipped > 0) {
-          stock[it.id] -= shipped;
-          s.stockMoves.push({ id: id('m'), date, itemId: it.id, type: 'out', qty: shipped, note: 'משלוח לסניפים', createdAt: at(date, 23) });
-        }
-        if (rnd() < 0.08) {
-          const q = ri(20, 80);
-          stock[it.id] -= q;
-          s.stockMoves.push({ id: id('m'), date, itemId: it.id, type: 'scrap', qty: q, note: 'פג תוקף', createdAt: at(date, 23) });
-        }
-      }
-
-      // Weekly count on Sunday (end of day)
+      // Weekly count on Sunday (end of day), raw materials only
       if (dow === 0) {
         for (let k = 0; k < 4; k++) {
-          const it = s.items[(dayIdx + k * 5) % s.items.length];
+          const it = RAW_ITEMS[(dayIdx + k * 4) % RAW_ITEMS.length];
           if (LOW_STOCK_STORY.includes(it.id)) continue;
           const expected = stock[it.id];
           const counted = Math.max(0, Math.round(expected * r(0.975, 1.015)));
           stock[it.id] = counted;
-          s.stockMoves.push({ id: id('m'), date, itemId: it.id, type: 'count', qty: counted, expectedQty: expected, note: 'ספירה שבועית', createdAt: at(date, 23) });
+          s.stockMoves.push({ id: id('m'), date, itemId: it.id, type: 'count', qty: counted, expectedQty: expected, note: 'ספירה שבועית', createdAt: at(date, 20) });
         }
       }
     });
@@ -258,5 +273,5 @@
     return baseState('empty');
   }
 
-  return { demoState, emptyState, baseState, mulberry32 };
+  return { demoState, emptyState, baseState, mulberry32, PRODUCTS };
 });
