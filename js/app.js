@@ -145,7 +145,28 @@
     document.removeEventListener('keydown', escClose);
   }
 
-  function download(filename, text) {
+  // In the claude.ai viewer, files are saved through the downloads capability; elsewhere through a blob link.
+  let downloadsPromise = null;
+  function downloadsApi() {
+    if (!downloadsPromise) {
+      downloadsPromise = window.claude && typeof window.claude.use === 'function'
+        ? window.claude.use('downloads').catch(() => null)
+        : Promise.resolve(null);
+    }
+    return downloadsPromise;
+  }
+
+  // Resolves 'saved' | 'started' | 'declined' | 'failed'.
+  async function download(filename, text) {
+    const dl = await downloadsApi();
+    if (dl) {
+      try {
+        await dl.save({ filename, data: text });
+        return 'saved';
+      } catch (e) {
+        return e && e.code === 'declined' ? 'declined' : 'failed';
+      }
+    }
     try {
       const blob = new Blob([text], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -156,9 +177,9 @@
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      return true;
+      return 'started';
     } catch (e) {
-      return false;
+      return 'failed';
     }
   }
 
@@ -815,6 +836,7 @@
     App.state = loaded.state;
     App.persisted = loaded.persisted;
     Charts.setup();
+    downloadsApi();
     buildShell();
     bindEvents();
     const id = location.hash.replace('#', '');

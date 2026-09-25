@@ -680,8 +680,12 @@
           armDelete(b, b.dataset.delMaster, () => deleteMaster(coll, id));
         }));
         root.querySelector('[data-backup-download]').addEventListener('click', () => {
-          api.download(`factory-dashboard-${api.today()}.json`, Store.exportJSON(api.state));
-          api.toast('אם ההורדה לא התחילה, השתמש ב"הצג טקסט לגיבוי"');
+          api.download(`factory-dashboard-${api.today()}.json`, Store.exportJSON(api.state)).then((r) => api.toast({
+            saved: 'קובץ הגיבוי נשמר',
+            started: 'ההורדה התחילה. אם הקובץ לא הגיע, השתמש ב"הצג טקסט לגיבוי"',
+            declined: 'ההורדה בוטלה',
+            failed: 'אי אפשר להוריד קובץ כאן. השתמש ב"הצג טקסט לגיבוי"',
+          }[r]));
         });
         root.querySelector('[data-backup-show]').addEventListener('click', () => {
           document.getElementById('backup-box').hidden = false;
