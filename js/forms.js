@@ -609,10 +609,10 @@
   // =====================================================================
   // Target cards: each KPI has a goal and a red line. Values are shown in %, stored as fractions.
   const TARGET_CARDS = [
-    { title: 'OEE', desc: 'יעילות כוללת של המכונות', fields: [['oee', 'יעד', 'מעל = ירוק'], ['oeeWarn', 'סף חריגה', 'מתחת = אדום']] },
-    { title: 'פחת ייצור', desc: 'יחידות שנפסלו מתוך מה שיוצר', fields: [['scrapMax', 'יעד מקסימלי', 'עד = ירוק'], ['scrapWarn', 'סף חריגה', 'מעל = אדום']] },
-    { title: 'נוכחות', desc: 'נוכחים מתוך מי שהיה אמור לעבוד', fields: [['attendance', 'יעד', 'מעל = ירוק'], ['attendanceWarn', 'סף חריגה', 'מתחת = אדום']] },
-    { title: 'עמידה בתכנון', desc: 'יחידות תקינות מתוך המתוכנן', fields: [['planAdherence', 'יעד', 'מעל = ירוק'], ['planAdherenceWarn', 'סף חריגה', 'מתחת = אדום']] },
+    { title: 'OEE', tone: 'blue', desc: 'יעילות כוללת של המכונות', fields: [['oee', 'יעד', 'מעל = ירוק'], ['oeeWarn', 'סף חריגה', 'מתחת = אדום']] },
+    { title: 'פחת ייצור', tone: 'orange', desc: 'יחידות שנפסלו מתוך מה שיוצר', fields: [['scrapMax', 'יעד מקסימלי', 'עד = ירוק'], ['scrapWarn', 'סף חריגה', 'מעל = אדום']] },
+    { title: 'נוכחות', tone: 'green', desc: 'נוכחים מתוך מי שהיה אמור לעבוד', fields: [['attendance', 'יעד', 'מעל = ירוק'], ['attendanceWarn', 'סף חריגה', 'מתחת = אדום']] },
+    { title: 'עמידה בתכנון', tone: 'violet', desc: 'יחידות תקינות מתוך המתוכנן', fields: [['planAdherence', 'יעד', 'מעל = ירוק'], ['planAdherenceWarn', 'סף חריגה', 'מתחת = אדום']] },
   ];
   const SHIFT_FIELDS = [['start', 'תחילת משמרת'], ['end', 'סוף משמרת'], ['extendedEnd', 'הארכה (שעות נוספות) עד'], ['fridayEnd', 'שישי עד']];
   const PLAN_FIELDS = [
@@ -654,17 +654,17 @@
     }).join('');
 
     const table = (head, rows, empty) => `<div class="table-wrap settings-table"><table class="data"><thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rows || `<tr><td colspan="${head.length}" class="muted">${empty}</td></tr>`}</tbody></table></div>`;
-    const card = (title, desc, body) => `<article class="set-card"><header><h3>${title}</h3>${desc ? `<p>${desc}</p>` : ''}</header>${body}</article>`;
+    const card = (title, desc, body, tone) => `<article class="set-card"${tone ? ` data-tone="${tone}"` : ''}><header><h3>${title}</h3>${desc ? `<p>${desc}</p>` : ''}</header>${body}</article>`;
 
     const general = card('כללי', 'שם המפעל ומצב התצוגה', `
       <div class="field"><label for="set-plant">שם המפעל</label><input type="text" id="set-plant" value="${api.esc(s.settings.plantName)}" maxlength="60"></div>
       <div class="field"><span class="label">מצב תצוגה</span><div class="seg seg-full" role="group" aria-label="מצב תצוגה">${[['system', 'לפי המכשיר'], ['light', 'בהיר'], ['dark', 'כהה']].map(([v, l]) => `<button type="button" data-theme-set="${v}" aria-pressed="${theme === v}">${l}</button>`).join('')}</div></div>`);
     const shiftCard = card('שעות עבודה', `משמרת אחת ביום, ראשון עד שישי. עבודה אחרי ${api.esc(sh.end)} נספרת כשעות נוספות`,
-      `<div class="vbox-grid">${SHIFT_FIELDS.map(([k, l]) => vbox(`sh-${k}`, l, sh[k], '', '', `type="time" step="900" data-shift="${k}"`)).join('')}</div>`);
+      `<div class="vbox-grid">${SHIFT_FIELDS.map(([k, l]) => vbox(`sh-${k}`, l, sh[k], '', '', `type="time" step="900" data-shift="${k}"`)).join('')}</div>`, 'cyan');
     const planCard = card('תכנון ייצור', 'הגדרות לבניית התוכנית השבועית',
-      `<div class="vbox-grid">${PLAN_FIELDS.map(([k, l, unit, step, min, max]) => vbox(`pl-${k}`, l, P[k], unit, '', `type="number" inputmode="decimal" step="${step}" min="${min}" max="${max}" data-plan="${k}"`)).join('')}</div>`);
+      `<div class="vbox-grid">${PLAN_FIELDS.map(([k, l, unit, step, min, max]) => vbox(`pl-${k}`, l, P[k], unit, '', `type="number" inputmode="decimal" step="${step}" min="${min}" max="${max}" data-plan="${k}"`)).join('')}</div>`, 'amber');
     const targetCards = TARGET_CARDS.map((tc) => card(tc.title, tc.desc,
-      `<div class="vbox-grid">${tc.fields.map(([k, l, hint]) => vbox(`tg-${k}`, l, pct(t[k]), '%', hint, `type="number" inputmode="decimal" step="0.5" min="0" max="100" data-target="${k}"`)).join('')}</div>`)).join('');
+      `<div class="vbox-grid">${tc.fields.map(([k, l, hint]) => vbox(`tg-${k}`, l, pct(t[k]), '%', hint, `type="number" inputmode="decimal" step="0.5" min="0" max="100" data-target="${k}"`)).join('')}</div>`, tc.tone)).join('');
 
     const html = `
       <section class="section">${api.sectionHead('הגדרות', 'שינויים נשמרים אוטומטית')}

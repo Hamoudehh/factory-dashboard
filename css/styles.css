@@ -42,6 +42,15 @@
   --bar-muted: #b8c2d0;
   --shadow: 0 1px 2px rgba(15, 27, 45, 0.06), 0 2px 8px rgba(15, 27, 45, 0.05);
 
+  /* Bright tile colors (same in both themes). White text passes 4.3:1+, amber takes dark text. Never pink. */
+  --t-blue: #1565d8;
+  --t-orange: #d9480f;
+  --t-green: #08875a;
+  --t-violet: #7036e0;
+  --t-amber: #f5a800;
+  --t-cyan: #0b7fa0;
+  --t-ink-dark: #231a00;
+
   --radius: 14px;
   --radius-sm: 10px;
   --gap: 16px;
@@ -517,3 +526,52 @@ textarea.backup-text { width: 100%; min-height: 160px; border-radius: 12px; bord
 .att-lbl { display: block; font-size: 13px; color: var(--ink-3); font-weight: 600; }
 .chip-block { width: 100%; min-height: 48px; padding: 0 8px; font-size: 15px; }
 .chip[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* ============ Bright KPI tiles ============ */
+.grid-kpi > .kpi { --tile: var(--t-blue); --tile-ink: #ffffff; }
+.grid-kpi > .kpi:nth-child(6n+2) { --tile: var(--t-orange); }
+.grid-kpi > .kpi:nth-child(6n+3) { --tile: var(--t-green); }
+.grid-kpi > .kpi:nth-child(6n+4) { --tile: var(--t-violet); }
+.grid-kpi > .kpi:nth-child(6n+5) { --tile: var(--t-amber); --tile-ink: var(--t-ink-dark); }
+.grid-kpi > .kpi:nth-child(6n+6) { --tile: var(--t-cyan); }
+.grid-kpi > .kpi {
+  background:
+    radial-gradient(circle at 8% 118%, rgba(255, 255, 255, 0.22), transparent 45%),
+    linear-gradient(160deg, var(--tile), color-mix(in srgb, var(--tile) 86%, #000));
+  color: var(--tile-ink);
+  border-top: 0;
+  box-shadow: 0 10px 20px -12px color-mix(in srgb, var(--tile) 80%, transparent);
+}
+.grid-kpi > .kpi .kpi-label,
+.grid-kpi > .kpi .kpi-value { color: var(--tile-ink); }
+.grid-kpi > .kpi .kpi-sub,
+.grid-kpi > .kpi .delta { color: var(--tile-ink); opacity: 0.92; }
+/* The arrow keeps its good/bad color on a white dot so it reads on any tile. */
+.grid-kpi > .kpi .delta b {
+  display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%;
+  background: #ffffff; font-size: 10px; flex: none;
+}
+.grid-kpi > .kpi .pill { border-color: transparent; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); }
+
+/* ============ Bright value boxes in settings ============ */
+.set-card[data-tone="blue"] { --tone: var(--t-blue); --tone-ink: #ffffff; }
+.set-card[data-tone="orange"] { --tone: var(--t-orange); --tone-ink: #ffffff; }
+.set-card[data-tone="green"] { --tone: var(--t-green); --tone-ink: #ffffff; }
+.set-card[data-tone="violet"] { --tone: var(--t-violet); --tone-ink: #ffffff; }
+.set-card[data-tone="cyan"] { --tone: var(--t-cyan); --tone-ink: #ffffff; }
+.set-card[data-tone="amber"] { --tone: var(--t-amber); --tone-ink: var(--t-ink-dark); }
+.set-card[data-tone] { border-top: 5px solid var(--tone); }
+.set-card[data-tone] .vbox-input {
+  background: linear-gradient(160deg, var(--tone), color-mix(in srgb, var(--tone) 86%, #000));
+  border-color: transparent;
+  box-shadow: 0 8px 16px -10px color-mix(in srgb, var(--tone) 80%, transparent);
+}
+.set-card[data-tone] .vbox-input input,
+.set-card[data-tone] .vbox-unit { color: var(--tone-ink); }
+.set-card[data-tone] .vbox-input:focus-within {
+  background: color-mix(in srgb, var(--tone) 84%, #000);
+  border-color: var(--tone-ink);
+  outline: 3px solid var(--focus); outline-offset: 2px;
+}
+.set-card[data-tone] .vbox-input input[type="time"] { color-scheme: dark; }
+.set-card[data-tone="amber"] .vbox-input input[type="time"] { color-scheme: light; }
