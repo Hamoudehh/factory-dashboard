@@ -329,7 +329,7 @@
     }
     for (const p of K.productSummary(c.logs, c.s.products)) {
       const st = K.statusLow(p.scrapRate, t.scrapMax, t.scrapWarn);
-      if (st === 'crit') out.push({ status: st, text: `פסולת גבוהה ב${p.name}: ${fmt.pct(p.scrapRate)}`, sub: `יעד עד ${fmt.pct(t.scrapMax, 0)}` });
+      if (st === 'crit') out.push({ status: st, text: `פחת ייצור גבוה ב${p.name}: ${fmt.pct(p.scrapRate)}`, sub: `יעד עד ${fmt.pct(t.scrapMax, 0)}` });
     }
     for (const r of inv.belowMin) {
       out.push({ status: 'crit', text: `${r.name} מתחת למינימום: ${fmt.int(r.qty)} ${r.unit}`, sub: `מינימום ${fmt.int(r.minQty)} ${r.unit}` });
@@ -393,7 +393,7 @@
     const tiles = [
       tile({ label: 'OEE כולל', value: fmt.pct(p.oee), sub: `יעד ${fmt.pct(t.oee, 0)}`, status: K.statusHigh(p.oee, t.oee, t.oeeWarn), delta: delta(p.oee, pp.oee, 'pp', true) }),
       tile({ label: 'יחידות תקינות', value: fmt.int(p.good), sub: `מתוך ${fmt.int(p.plannedUnits)} מתוכנן · ${fmt.pct(p.adherence, 0)}`, status: K.statusHigh(p.adherence, t.planAdherence, t.planAdherenceWarn), delta: delta(p.good, pp.good, 'rel', true) }),
-      tile({ label: 'פסולת', value: fmt.pct(p.scrapRate), sub: `${fmt.int(p.scrap)} יח' · יעד עד ${fmt.pct(t.scrapMax, 0)}`, status: K.statusLow(p.scrapRate, t.scrapMax, t.scrapWarn), delta: delta(p.scrapRate, pp.scrapRate, 'pp', false) }),
+      tile({ label: 'פחת ייצור', value: fmt.pct(p.scrapRate), sub: `${fmt.int(p.scrap)} יח' · יעד עד ${fmt.pct(t.scrapMax, 0)}`, status: K.statusLow(p.scrapRate, t.scrapMax, t.scrapWarn), delta: delta(p.scrapRate, pp.scrapRate, 'pp', false) }),
       tile({ label: 'ערך ייצור', value: fmt.money(value), sub: 'לפי מחיר מכירה', delta: delta(value, prevValue, 'rel', true) }),
       tile({ label: 'עלות עבודה ליחידה', value: fmt.money(w.costPerUnit, 2), sub: `סה"כ ${fmt.money(w.totalCost)}`, delta: delta(w.costPerUnit, pw.costPerUnit, 'rel', false) }),
       tile({ label: 'ערך מלאי', value: fmt.money(inv.totalValue), sub: inv.belowMin.length ? `${inv.belowMin.length} פריטים מתחת למינימום` : 'כל הפריטים מעל המינימום', status: inv.belowMin.length ? 'crit' : 'good', delta: delta(inv.totalValue, invPrev.totalValue, 'rel', true) }),
@@ -407,7 +407,7 @@
         <div class="mcard-head"><h3>${esc(m.name)}</h3>${pill(st)}</div>
         <div class="mcard-oee"><strong>${fmt.pct(ms.oee, 0)}</strong><span>OEE</span></div>
         <div class="meters">${meter('זמינות', ms.A)}${meter('ביצועים', ms.P)}${meter('איכות', ms.Q)}</div>
-        <div class="mcard-stats"><span>תקין <b>${fmt.int(ms.good)}</b></span><span>השבתה <b>${fmt.int(ms.downMinutes)}</b> דק'</span><span>פסולת <b>${fmt.pct(ms.scrapRate)}</b></span></div>
+        <div class="mcard-stats"><span>תקין <b>${fmt.int(ms.good)}</b></span><span>השבתה <b>${fmt.int(ms.downMinutes)}</b> דק'</span><span>פחת ייצור <b>${fmt.pct(ms.scrapRate)}</b></span></div>
       </a>`;
     }).join('');
 
@@ -448,9 +448,9 @@
       tile({ label: 'OEE', value: fmt.pct(s.oee), sub: `יעד ${fmt.pct(t.oee, 0)}`, status: K.statusHigh(s.oee, t.oee, t.oeeWarn), delta: delta(s.oee, ps.oee, 'pp', true) }),
       tile({ label: 'זמינות', value: fmt.pct(s.A), sub: `${fmt.int(s.runMinutes)} מתוך ${fmt.int(s.plannedMinutes)} דק'`, status: K.statusHigh(s.A, 0.9, 0.8), delta: delta(s.A, ps.A, 'pp', true) }),
       tile({ label: 'ביצועים', value: fmt.pct(s.P), sub: `קצב אידיאלי ${fmt.int(m.ratePerHour)}/שעה`, status: K.statusHigh(s.P, 0.95, 0.85), delta: delta(s.P, ps.P, 'pp', true) }),
-      tile({ label: 'איכות', value: fmt.pct(s.Q), sub: `${fmt.int(s.scrap)} יח' פסולת`, status: K.statusHigh(s.Q, 0.97, 0.95), delta: delta(s.Q, ps.Q, 'pp', true) }),
+      tile({ label: 'איכות', value: fmt.pct(s.Q), sub: `${fmt.int(s.scrap)} יח' פחת ייצור`, status: K.statusHigh(s.Q, 0.97, 0.95), delta: delta(s.Q, ps.Q, 'pp', true) }),
       tile({ label: 'תפוקה לשעה', value: fmt.int(s.unitsPerHour), sub: 'יחידות תקינות לשעת ריצה', delta: delta(s.unitsPerHour, ps.unitsPerHour, 'rel', true) }),
-      tile({ label: 'פסולת', value: fmt.pct(s.scrapRate), sub: `יעד עד ${fmt.pct(t.scrapMax, 0)}`, status: K.statusLow(s.scrapRate, t.scrapMax, t.scrapWarn), delta: delta(s.scrapRate, ps.scrapRate, 'pp', false) }),
+      tile({ label: 'פחת ייצור', value: fmt.pct(s.scrapRate), sub: `יעד עד ${fmt.pct(t.scrapMax, 0)}`, status: K.statusLow(s.scrapRate, t.scrapMax, t.scrapWarn), delta: delta(s.scrapRate, ps.scrapRate, 'pp', false) }),
       tile({ label: 'דקות השבתה', value: fmt.int(s.downMinutes), sub: `${fmt.pct(1 - (s.A == null ? 1 : s.A))} מהזמן המתוכנן`, delta: delta(s.downMinutes, ps.downMinutes, 'rel', false) }),
       tile({ label: 'תקלות', value: fmt.int(s.breakdowns), sub: `${fmt.int(s.breakdownMinutes)} דק' תקלה`, delta: delta(s.breakdowns, ps.breakdowns, 'rel', false) }),
       tile({ label: 'MTTR', value: s.mttr == null ? '—' : `${fmt.int(s.mttr)} דק'`, sub: 'זמן ממוצע לתיקון', delta: delta(s.mttr, ps.mttr, 'rel', false) }),
@@ -484,7 +484,7 @@
           { key: 'product', label: 'מוצר' },
           { key: 'planned', label: 'מתוכנן', num: true, fmt: (v) => fmt.int(v) },
           { key: 'good', label: 'תקין', num: true, fmt: (v) => fmt.int(v) },
-          { key: 'scrap', label: 'פסולת', num: true, fmt: (v) => fmt.int(v) },
+          { key: 'scrap', label: 'פחת ייצור', num: true, fmt: (v) => fmt.int(v) },
           { key: 'down', label: 'השבתה (דק\')', num: true, fmt: (v) => fmt.int(v) },
           { key: 'oee', label: 'OEE', num: true, fmt: (v) => `${fmt.pct(v)} ${pillIcon(K.statusHigh(v, t.oee, t.oeeWarn))}` },
           { key: 'reasons', label: 'סיבות השבתה' },
@@ -563,9 +563,9 @@
     const tiles = [
       tile({ label: 'יחידות תקינות', value: fmt.int(good), sub: `${list.length} מוצרים`, delta: delta(good, pGood, 'rel', true) }),
       tile({ label: 'עמידה בתכנון', value: fmt.pct(ratio(good, planned)), sub: `מתוכנן ${fmt.int(planned)}`, status: K.statusHigh(ratio(good, planned), t.planAdherence, t.planAdherenceWarn), delta: delta(ratio(good, planned), ratio(pGood, pPlanned), 'pp', true) }),
-      tile({ label: 'פסולת', value: fmt.pct(ratio(scrap, good + scrap)), sub: `${fmt.int(scrap)} יח'`, status: K.statusLow(ratio(scrap, good + scrap), t.scrapMax, t.scrapWarn), delta: delta(ratio(scrap, good + scrap), ratio(pScrap, pGood + pScrap), 'pp', false) }),
+      tile({ label: 'פחת ייצור', value: fmt.pct(ratio(scrap, good + scrap)), sub: `${fmt.int(scrap)} יח'`, status: K.statusLow(ratio(scrap, good + scrap), t.scrapMax, t.scrapWarn), delta: delta(ratio(scrap, good + scrap), ratio(pScrap, pGood + pScrap), 'pp', false) }),
       tile({ label: 'ערך ייצור', value: fmt.money(tot(ps, 'value')), sub: 'לפי מחיר מכירה', delta: delta(tot(ps, 'value'), tot(prev, 'value'), 'rel', true) }),
-      tile({ label: 'עלות פסולת', value: fmt.money(tot(ps, 'scrapCost')), sub: 'לפי עלות ליחידה', delta: delta(tot(ps, 'scrapCost'), tot(prev, 'scrapCost'), 'rel', false) }),
+      tile({ label: 'עלות פחת ייצור', value: fmt.money(tot(ps, 'scrapCost')), sub: 'לפי עלות ליחידה', delta: delta(tot(ps, 'scrapCost'), tot(prev, 'scrapCost'), 'rel', false) }),
     ];
     const active = ps.filter((p) => p.planned > 0 || p.good > 0).sort((a, b) => b.good - a.good);
     const top = active.slice(0, 5).map((p, i) => `<li class="alert" style="--pill:var(--m-${p.machineId})"><b class="num">${i + 1}</b><div><p>${esc(p.name)} · ${fmt.int(p.good)} יח'</p><small>${esc((c.machines[p.machineId] || {}).name || '')} · ${fmt.money(p.value)}</small></div></li>`).join('');
@@ -577,7 +577,7 @@
       <section class="section">${sectionHead('Top 5 לפי יחידות תקינות', '')}${top ? `<ol class="alerts">${top}</ol>` : '<div class="empty">אין ייצור בתקופה הזו</div>'}</section>
       <section class="section"><div class="charts">
         ${panel('ch-plan', 'מתוכנן מול תקין לפי מוצר', 'עמודת התקין בצבע המכונה', { tall: active.length > 6, legend: legendHtml([{ label: 'מתוכנן', color: 'var(--bar-muted)' }].concat(machinesShown.map((id) => ({ label: `תקין – ${c.machines[id].name}`, color: `var(--m-${id})` })))) })}
-        ${panel('ch-scrap', 'פסולת % לפי מוצר', `הקו המקווקו הוא היעד (${fmt.pct(t.scrapMax, 0)})`, { tall: active.length > 6, legend: legendHtml([{ label: 'תקין', color: 'var(--good)' }, { label: 'אזהרה', color: 'var(--warn)' }, { label: 'חריגה', color: 'var(--crit)' }]) })}
+        ${panel('ch-scrap', 'פחת ייצור % לפי מוצר', `הקו המקווקו הוא היעד (${fmt.pct(t.scrapMax, 0)})`, { tall: active.length > 6, legend: legendHtml([{ label: 'תקין', color: 'var(--good)' }, { label: 'אזהרה', color: 'var(--warn)' }, { label: 'חריגה', color: 'var(--crit)' }]) })}
       </div></section>
       <section class="section">${sectionHead('טבלת מוצרים', '')}
         ${tableHtml('t-products', [
@@ -586,10 +586,10 @@
           { key: 'planned', label: 'מתוכנן', num: true, fmt: (v) => fmt.int(v) },
           { key: 'good', label: 'תקין', num: true, fmt: (v) => fmt.int(v) },
           { key: 'adherence', label: 'עמידה', num: true, fmt: (v) => fmt.pct(v, 0) },
-          { key: 'scrap', label: 'פסולת', num: true, fmt: (v) => fmt.int(v) },
-          { key: 'scrapRate', label: 'פסולת %', num: true, fmt: (v) => `${fmt.pct(v)} ${pillIcon(K.statusLow(v, t.scrapMax, t.scrapWarn))}` },
+          { key: 'scrap', label: 'פחת ייצור', num: true, fmt: (v) => fmt.int(v) },
+          { key: 'scrapRate', label: 'פחת ייצור %', num: true, fmt: (v) => `${fmt.pct(v)} ${pillIcon(K.statusLow(v, t.scrapMax, t.scrapWarn))}` },
           { key: 'value', label: 'ערך', num: true, fmt: (v) => fmt.money(v) },
-          { key: 'scrapCost', label: 'עלות פסולת', num: true, fmt: (v) => fmt.money(v) },
+          { key: 'scrapCost', label: 'עלות פחת ייצור', num: true, fmt: (v) => fmt.money(v) },
         ], ps, 'אין מוצרים. הוסף מוצרים במסך ההגדרות.')}
       </section>`;
     return {
@@ -600,7 +600,7 @@
           { label: 'תקין', colors: active.map((p) => machineColor(p.machineId)), data: active.map((p) => p.good) },
         ], { horizontal: true, legend: false });
         drawChart('ch-scrap', 'bar', active.map((p) => p.name), [{
-          label: 'פסולת %', colors: active.map((p) => scrapColor(p.scrapRate)), data: active.map((p) => (p.scrapRate == null ? null : Math.round(p.scrapRate * 1000) / 10)),
+          label: 'פחת ייצור %', colors: active.map((p) => scrapColor(p.scrapRate)), data: active.map((p) => (p.scrapRate == null ? null : Math.round(p.scrapRate * 1000) / 10)),
         }], { horizontal: true, legend: false, fmt: (v) => `${fmt.dec(v)}%`, target: t.scrapMax * 100 });
       },
     };

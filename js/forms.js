@@ -108,7 +108,7 @@
       out.push({
         kind: 'production', id: l.id, at: l.createdAt || l.date,
         text: `דיווח ייצור · ${m.name || ''} · ${p.name || ''}`,
-        sub: `${fmt.dateLong(l.date)} · ${shiftName(l.shift)} · ${fmt.int(l.goodUnits)} תקין, ${fmt.int(l.scrapUnits)} פסולת`,
+        sub: `${fmt.dateLong(l.date)} · ${shiftName(l.shift)} · ${fmt.int(l.goodUnits)} תקין, ${fmt.int(l.scrapUnits)} פחת ייצור`,
       });
     }
     for (const mv of s.stockMoves) {
@@ -225,7 +225,7 @@
         <div class="fields">
           ${numField('plannedUnits', 'יחידות מתוכננות', d.plannedUnits, e)}
           ${numField('goodUnits', 'יחידות תקינות', d.goodUnits, e)}
-          ${numField('scrapUnits', 'פסולת (יחידות)', d.scrapUnits, e, { placeholder: '0' })}
+          ${numField('scrapUnits', 'פחת ייצור (יחידות)', d.scrapUnits, e, { placeholder: '0' })}
           ${numField('plannedMinutes', 'דקות עבודה מתוכננות', d.plannedMinutes, e, { hint: 'משמרת מלאה = 480' })}
         </div>
         <div class="field${inv(e, 'downtimes')}"><span class="label">השבתות</span>
@@ -593,7 +593,7 @@
   // =====================================================================
   const TARGET_FIELDS = [
     ['oee', 'יעד OEE'], ['oeeWarn', 'OEE: מתחת לזה = חריגה'],
-    ['scrapMax', 'פסולת מקסימלית'], ['scrapWarn', 'פסולת: מעל זה = חריגה'],
+    ['scrapMax', 'פחת ייצור מקסימלי'], ['scrapWarn', 'פחת ייצור: מעל זה = חריגה'],
     ['attendance', 'יעד נוכחות'], ['attendanceWarn', 'נוכחות: מתחת לזה = חריגה'],
     ['planAdherence', 'יעד עמידה בתכנון'], ['planAdherenceWarn', 'עמידה בתכנון: מתחת לזה = חריגה'],
   ];
