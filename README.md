@@ -52,6 +52,16 @@ node tools/bundle.js
 
 **הגדרות ← איפוס נתונים**. יש שלוש אפשרויות: מחיקת תנועות בלבד, חזרה לנתוני דמו, או איפוס מלא. לפני כל איפוס נשמר גיבוי, ואפשר לשחזר אותו מאותו מסך.
 
+## שמירה אוטומטית ל-GitHub
+
+כל שינוי נשמר ונדחף ל-GitHub לבד, דרך `tools/auto-commit.js`:
+
+- **אחרי כל תשובה של Claude:** hook מסוג Stop ב-`.claude/settings.json` מריץ את הסקריפט.
+- **כשאתה עורך קבצים בעצמך:** `node tools/auto-commit.js --watch` שומר ודוחף 15 שניות אחרי העריכה האחרונה. עוצרים ב-Ctrl+C.
+- **ידנית:** `node tools/auto-commit.js`, או `--dry-run` כדי לראות מה יישמר.
+
+אם בדיקה נכשלת, שום דבר לא נשמר ולא נדחף. ההסבר המלא נמצא בסקיל `.claude/skills/auto-commit-push/SKILL.md`.
+
 ## בדיקות
 
 ```bash
@@ -75,3 +85,4 @@ node --test
 | `js/app.js` | ניווט, פילטרים ומסכי הדשבורד |
 | `tools/serve.js` | שרת מקומי |
 | `tools/bundle.js` | בניית קובץ HTML יחיד |
+| `tools/auto-commit.js` | commit ו-push אוטומטיים אחרי בדיקות |
