@@ -635,6 +635,33 @@
   const cellSelect = (coll, id, field, value, options, label, disabled) => `<select class="cell-input" data-edit="${coll}|${id}|${field}|text" aria-label="${label}"${disabled ? ' disabled' : ''}>${options.map((o) => `<option value="${o.id}"${o.id === value ? ' selected' : ''}>${api.esc(o.name)}</option>`).join('')}</select>`;
   const delBtn = (coll, id, name) => `<button type="button" class="btn btn-sm btn-del" data-del-master="${coll}|${id}" aria-label="מחק את ${api.esc(name)}">מחק</button>`;
 
+  // Airtable connection status, reload and retry.
+  function cloudSection() {
+    const cl = api.cloud;
+    const when = cl.lastSync ? new Date(cl.lastSync).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '';
+    const status = {
+      local: ['none', 'לא מחובר', 'העותק הזה של הדף שומר רק בדפדפן. החיבור ל-Airtable פועל כשהדשבורד נפתח מהקישור ב-claude.ai, בחשבון שמחובר אליו Airtable.'],
+      connecting: ['warn', 'מתחבר', 'טוען את הנתונים מ-Airtable…'],
+      empty: ['warn', 'ממתין להעלאה', 'הבסיס ב-Airtable ריק. בחר בראש הדף מה להעלות.'],
+      synced: ['good', 'מחובר', `כל השינויים נשמרו ב-Airtable${when ? ` (עדכון אחרון ${when})` : ''}.`],
+      saving: ['warn', 'שומר', `שולח שינויים ל-Airtable${cl.pending ? `: עוד ${api.fmt.int(cl.pending)} רשומות` : ''}…`],
+      error: ['crit', 'לא נשמר', cl.message],
+    }[cl.mode] || ['none', '', ''];
+    const linked = cl.mode !== 'local';
+    const baseUrl = window.Airtable ? window.Airtable.baseUrl : '';
+    return `<section class="section">${api.sectionHead('Airtable', 'מאגר משותף לכל המכשירים')}
+      <div class="cloud-card">
+        <div class="cloud-status">${api.pill(status[0], status[1])}<p>${api.esc(status[2])}</p></div>
+        <div class="btn-row">
+          ${linked ? `<button type="button" class="btn" data-cloud-reload>${api.icon('swap')} טען מחדש מ-Airtable</button>` : ''}
+          ${cl.mode === 'error' ? '<button type="button" class="btn btn-primary" data-cloud-retry>נסה לשמור שוב</button>' : ''}
+          ${baseUrl ? `<a class="btn" href="${baseUrl}" target="_blank" rel="noopener">פתח את הבסיס ב-Airtable</a>` : ''}
+        </div>
+        <p class="hint">בסיס "ארומה - מאפים · דשבורד ייצור", עם טבלה לכל רשימה ולכל סוג דיווח.${linked ? ' איפוס וייבוא מתעדכנים גם ב-Airtable.' : ''}</p>
+      </div>
+    </section>`;
+  }
+
   function settings(c, a) {
     api = a;
     const s = c.s;
@@ -677,7 +704,8 @@
       <section class="section">${api.sectionHead('מוצרים', 'צריכת לקוחות ליום בקרטונים קובעת את ימי המלאי ואת התוכנית השבועית')}${table(['שם', 'מכונה', 'יח\' בקרטון', 'צריכה ליום (קר\')', 'מחיר ₪', 'עלות ₪', 'פעיל', ''], productRows, 'אין מוצרים')}<div><button type="button" class="btn" data-add="products">${api.icon('plus')} הוסף מוצר</button></div></section>
       <section class="section">${api.sectionHead('עובדים', '')}${table(['שם', 'תפקיד', 'עלות לשעה ₪', 'פעיל', ''], workerRows, 'אין עובדים')}<div><button type="button" class="btn" data-add="workers">${api.icon('plus')} הוסף עובד</button></div></section>
       <section class="section">${api.sectionHead('פריטי מלאי', 'מוצר מוגמר נספר בקרטונים ומתעדכן מהמוצרים')}${table(['שם', 'סוג', 'יחידה', 'עלות ₪', 'מינימום', 'פעיל', ''], itemRows, 'אין פריטים')}<div><button type="button" class="btn" data-add="items">${api.icon('plus')} הוסף פריט</button></div></section>
-      <section class="section">${api.sectionHead('גיבוי ושחזור', 'הנתונים שמורים רק בדפדפן הזה')}
+      ${cloudSection()}
+      <section class="section">${api.sectionHead('גיבוי ושחזור', api.cloud.mode === 'local' ? 'הנתונים שמורים רק בדפדפן הזה' : 'הנתונים שמורים ב-Airtable ובדפדפן. קובץ גיבוי הוא עותק נוסף')}
         <div class="form">
           <div class="btn-row">
             <button type="button" class="btn" data-backup-download>${api.icon('download')} הורד קובץ גיבוי</button>
@@ -736,6 +764,10 @@
           api.toast('הגדרות התכנון עודכנו');
         }));
         root.querySelectorAll('[data-theme-set]').forEach((b) => b.addEventListener('click', () => api.setTheme(b.dataset.themeSet)));
+        const reload = root.querySelector('[data-cloud-reload]');
+        if (reload) reload.addEventListener('click', () => api.cloudReload());
+        const retry = root.querySelector('[data-cloud-retry]');
+        if (retry) retry.addEventListener('click', () => api.cloudRetry());
         root.querySelectorAll('[data-edit]').forEach((el) => el.addEventListener('change', () => editMaster(el)));
         root.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', () => addMaster(b.dataset.add)));
         root.querySelectorAll('[data-del-master]').forEach((b) => b.addEventListener('click', () => {

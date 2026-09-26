@@ -67,6 +67,8 @@
     ui: { view: 'owner', period: '7', custom: { from: '', to: '' }, machine: 'all', selectedMachine: 'rondo', entryForm: null, theme: 'system' },
     tables: {},
     sort: {},
+    // Airtable sync. mode: local | connecting | empty | synced | saving | error
+    cloud: { mode: 'local', message: '', pending: 0, lastSync: null, base: null },
   };
 
   function loadUi() {
@@ -107,6 +109,7 @@
     App.version += 1;
     const v = App.version;
     const saved = Store.save(App.state);
+    afterChange();
     if (opts.render !== false) render();
     if (!saved && App.persisted) {
       toast('השמירה נכשלה. ייתכן שהזיכרון בדפדפן מלא. הורד גיבוי מההגדרות.');
@@ -118,6 +121,7 @@
           App.state = JSON.parse(before);
           App.version += 1;
           Store.save(App.state);
+          afterChange();
           render();
           toast('ההזנה בוטלה');
         },
@@ -129,8 +133,172 @@
     App.state = next;
     App.version += 1;
     Store.save(App.state);
+    afterChange();
     render();
     if (message) toast(message, action);
+  }
+
+  // ---------- Airtable sync ----------
+  // Airtable is the shared copy; localStorage keeps working when the connector is missing or fails.
+  // cloud.base holds the state Airtable is known to have, so each sync sends only the difference.
+  // Changes Airtable has not confirmed are also kept in localStorage, to be replayed after a reload.
+  const PENDING_KEY = 'fd.v1.pending';
+  function savePending(ops) {
+    try {
+      if (ops.length) localStorage.setItem(PENDING_KEY, JSON.stringify(ops));
+      else localStorage.removeItem(PENDING_KEY);
+    } catch (e) { /* storage full or blocked: the in-memory sync still runs */ }
+  }
+  function loadPending() {
+    try { return JSON.parse(localStorage.getItem(PENDING_KEY)) || []; } catch (e) { return []; }
+  }
+  const cloudLinked = () => App.cloud.base != null && ['synced', 'saving', 'error'].includes(App.cloud.mode);
+  let syncTimer = null;
+  let errorShown = false;
+
+  function setCloud(mode, message) {
+    App.cloud.mode = mode;
+    App.cloud.message = message || '';
+    updateCloudChip();
+  }
+
+  function updateCloudChip() {
+    const el = document.getElementById('cloud-chip');
+    if (!el) return;
+    const c = App.cloud;
+    const text = {
+      connecting: 'Airtable: טוען…',
+      empty: 'Airtable: ממתין להעלאה',
+      synced: 'Airtable: מסונכרן',
+      saving: c.pending ? `Airtable: שומר ${fmt.int(c.pending)}…` : 'Airtable: שומר…',
+      error: 'Airtable: לא נשמר',
+    }[c.mode];
+    el.hidden = !text;
+    el.textContent = text || '';
+    el.dataset.state = c.mode;
+    el.title = c.message || (c.lastSync ? `סונכרן לאחרונה ב-${new Date(c.lastSync).toLocaleTimeString('he-IL')}` : '');
+  }
+
+  function onCloudError(e) {
+    const d = Airtable.describeError(e);
+    if (Airtable.OFFLINE_CODES.includes(d.code)) {
+      App.cloud.base = null;
+      setCloud('local');
+    } else {
+      const message = `${d.message} השינויים שמורים במכשיר ויישלחו כשהחיבור יחזור.`;
+      setCloud('error', message);
+      if (!errorShown) { errorShown = true; toast(message); }
+    }
+    if (App.ui.view === 'settings') render();
+  }
+
+  function afterChange() {
+    if (!cloudLinked()) return;
+    savePending(Airtable.diff(JSON.parse(App.cloud.base), App.state));
+    clearTimeout(syncTimer);
+    setCloud('saving');
+    syncTimer = setTimeout(runSync, 600);
+  }
+
+  function runSync() {
+    return Airtable.enqueue(async () => {
+      const target = JSON.stringify(App.state);
+      const ops = Airtable.diff(JSON.parse(App.cloud.base), JSON.parse(target));
+      App.cloud.pending = Airtable.countOps(ops);
+      updateCloudChip();
+      if (ops.length) {
+        await Airtable.apply(ops, (k) => { App.cloud.pending = Math.max(0, App.cloud.pending - k); updateCloudChip(); });
+      }
+      App.cloud.base = target;
+      App.cloud.lastSync = Date.now();
+      App.cloud.pending = 0;
+      errorShown = false;
+      if (JSON.stringify(App.state) !== target) return afterChange(); // edited while sending
+      savePending([]);
+      setCloud('synced');
+      if (App.ui.view === 'settings') render();
+    }).catch(onCloudError);
+  }
+
+  async function pullCloud(quiet) {
+    if (!quiet) setCloud('connecting');
+    const startVersion = App.version;
+    const startState = JSON.stringify(App.state);
+    try {
+      const remote = await Airtable.pull();
+      if (remote.empty) {
+        App.cloud.base = null;
+        setCloud('empty');
+        render();
+        return;
+      }
+      const pulled = Store.normalize(Object.assign(
+        { version: C.schemaVersion, meta: { createdAt: new Date().toISOString(), source: 'airtable' }, settings: remote.settings || App.state.settings },
+        remote.state,
+      ));
+      App.cloud.base = JSON.stringify(pulled);
+      App.cloud.lastSync = Date.now();
+      // Changes that never reached Airtable (a failed save, or made during this load) go on top and are sent now.
+      let unsent = loadPending();
+      if (App.version !== startVersion) unsent = unsent.concat(Airtable.diff(JSON.parse(startState), App.state));
+      if (unsent.length) {
+        App.state = Airtable.overlay(pulled, unsent);
+        App.version += 1;
+        Store.save(App.state);
+        setCloud('saving');
+        render();
+        afterChange();
+        return;
+      }
+      const changed = JSON.stringify(App.state) !== App.cloud.base;
+      App.state = pulled;
+      App.version += 1;
+      Store.save(App.state);
+      setCloud('synced');
+      if (changed || !quiet) render();
+    } catch (e) {
+      onCloudError(e);
+    }
+  }
+
+  async function connectCloud() {
+    if (!window.Airtable) return;
+    let ok = false;
+    try { ok = await Airtable.init(); } catch (e) { ok = false; }
+    if (!ok) return setCloud('local');
+    await pullCloud(false);
+  }
+
+  // First connection to an empty base: upload everything, or only the lists and start clean.
+  function uploadInitial(kind) {
+    if (App.cloud.mode !== 'empty') return;
+    if (kind === 'lists') {
+      Store.saveBackup(App.state);
+      App.state = Store.resetState(App.state, 'transactions');
+    }
+    App.state.meta = Object.assign({}, App.state.meta, { source: 'airtable' });
+    App.version += 1;
+    Store.save(App.state);
+    App.cloud.base = JSON.stringify({ settings: null });
+    savePending(Airtable.diff(JSON.parse(App.cloud.base), App.state));
+    setCloud('saving');
+    render();
+    runSync().then(() => { if (App.cloud.mode === 'synced') toast('הנתונים הועלו ל-Airtable'); });
+  }
+
+  function cloudBanner() {
+    if (App.cloud.mode !== 'empty') return '';
+    return `<section class="cloud-banner" aria-labelledby="cloud-banner-title">
+      <div>
+        <h2 id="cloud-banner-title">Airtable מחובר. הבסיס עדיין ריק</h2>
+        <p>בחר מה להעלות. מרגע ההעלאה כל שינוי בדשבורד נשמר גם ב-Airtable, וכל מי שפותח את הקישור רואה את אותם נתונים.</p>
+      </div>
+      <div class="btn-row">
+        <button type="button" class="btn btn-primary" data-cloud-upload="all">העלה את כל הנתונים</button>
+        <button type="button" class="btn" data-cloud-upload="lists">התחל נקי: רק רשימות</button>
+      </div>
+      <p class="hint">"התחל נקי" מעלה מכונות, מוצרים, עובדים ופריטי מלאי, ומוחק את דיווחי הדמו, הנוכחות ותנועות המלאי. לפני כן נשמר גיבוי.</p>
+    </section>`;
   }
 
   // ---------- modal ----------
@@ -854,7 +1022,7 @@
     const s = App.state;
     document.getElementById('plant-name').textContent = s.settings.plantName || 'מאפייה';
     const date = new Intl.DateTimeFormat('he-IL', { weekday: 'long', day: 'numeric', month: 'numeric', year: 'numeric' }).format(new Date());
-    document.getElementById('today-label').innerHTML = `${esc(date)}${s.meta && s.meta.source === 'demo' ? ' <span class="demo-tag">נתוני דמו</span>' : ''}`;
+    document.getElementById('today-label').innerHTML = `${esc(date)}${s.meta && s.meta.source === 'demo' ? ' <span class="demo-tag">נתוני דמו</span>' : ''} <span class="cloud-chip" id="cloud-chip" hidden></span>`;
     document.querySelectorAll('[data-period]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.period === App.ui.period)));
     const cr = document.getElementById('custom-range');
     cr.hidden = App.ui.period !== 'custom';
@@ -879,6 +1047,7 @@
     tb.setAttribute('aria-label', themeText);
     tb.title = themeText;
     document.getElementById('storage-banner').hidden = App.persisted;
+    updateCloudChip();
   }
 
   // On load, "system" leaves any theme the host page already stamped.
@@ -903,7 +1072,7 @@
     const view = VIEWS[App.ui.view] || VIEWS.owner;
     const out = view.render(c);
     const main = document.getElementById('view');
-    main.innerHTML = out.html;
+    main.innerHTML = cloudBanner() + out.html;
     if (out.after) out.after();
   }
 
@@ -947,6 +1116,11 @@
       setTheme(order[(order.indexOf(App.ui.theme) + 1) % order.length]);
     });
     document.getElementById('view').addEventListener('click', (e) => {
+      const up = e.target.closest('[data-cloud-upload]');
+      if (up) {
+        uploadInitial(up.dataset.cloudUpload);
+        return;
+      }
       const sortBtn = e.target.closest('[data-sort]');
       if (sortBtn) {
         const [id, key] = sortBtn.dataset.sort.split('|');
@@ -975,6 +1149,11 @@
         render();
       }
     });
+    // Back on the page after a while: pick up what other devices saved.
+    document.addEventListener('visibilitychange', () => {
+      const c = App.cloud;
+      if (document.visibilityState === 'visible' && c.mode === 'synced' && Date.now() - (c.lastSync || 0) > 60000) pullCloud(true);
+    });
     // Re-draw charts when the color scheme changes (OS setting or host toggle).
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const onScheme = () => { if (App.ui.theme === 'system') render(); };
@@ -993,6 +1172,9 @@
     commit, replaceState, render, toast, openModal, closeModal, download, setTheme,
     fmt, esc, icon, pill, today, shiftName, reasonName, sectionHead, tableHtml,
     get persisted() { return App.persisted; },
+    get cloud() { return App.cloud; },
+    cloudReload: () => pullCloud(false),
+    cloudRetry: () => { if (App.cloud.base == null) return pullCloud(false); setCloud('saving'); return runSync(); },
   };
 
   function init() {
@@ -1010,6 +1192,7 @@
     const id = location.hash.replace('#', '');
     App.ui.view = VIEWS[id] ? id : 'owner';
     render();
+    connectCloud();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

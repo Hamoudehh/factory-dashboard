@@ -575,3 +575,22 @@ textarea.backup-text { width: 100%; min-height: 160px; border-radius: 12px; bord
 }
 .set-card[data-tone] .vbox-input input[type="time"] { color-scheme: dark; }
 .set-card[data-tone="amber"] .vbox-input input[type="time"] { color-scheme: light; }
+
+/* ============ Airtable sync ============ */
+.cloud-chip { display: inline-flex; align-items: center; gap: 6px; margin-inline-start: 6px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 700; background: rgba(255, 255, 255, 0.14); color: var(--header-ink); white-space: nowrap; }
+.cloud-chip::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--none); flex: none; }
+.cloud-chip[data-state="synced"]::before { background: var(--good); }
+.cloud-chip[data-state="saving"]::before, .cloud-chip[data-state="connecting"]::before, .cloud-chip[data-state="empty"]::before { background: var(--warn); }
+.cloud-chip[data-state="error"]::before { background: var(--crit); }
+.cloud-chip[data-state="saving"]::before, .cloud-chip[data-state="connecting"]::before { animation: cloud-pulse 1s ease-in-out infinite alternate; }
+@keyframes cloud-pulse { to { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .cloud-chip::before { animation: none !important; } }
+
+.cloud-banner { display: grid; gap: 14px; margin-bottom: 20px; padding: 18px; border-radius: 18px; background: var(--surface); border: 2px solid var(--t-blue); box-shadow: var(--shadow); }
+.cloud-banner h2 { font-size: 20px; margin: 0 0 4px; }
+.cloud-banner p { margin: 0; color: var(--ink-2); }
+.cloud-banner .hint { color: var(--ink-3); }
+
+.cloud-card { display: grid; gap: 14px; padding: 18px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.cloud-status { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.cloud-status p { margin: 0; flex: 1 1 240px; color: var(--ink-2); }
