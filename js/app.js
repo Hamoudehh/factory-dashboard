@@ -997,7 +997,7 @@
   }
 
   const VIEWS = {
-    owner: { label: 'בעלים', icon: 'owner', render: viewOwner, filters: true },
+    owner: { label: 'הנהלה', icon: 'owner', render: viewOwner, filters: true },
     machines: { label: 'מכונות', icon: 'machines', render: viewMachines, filters: true },
     workers: { label: 'עובדים', icon: 'workers', render: viewWorkers, filters: true },
     products: { label: 'מוצרים', icon: 'products', render: viewProducts, filters: true },
