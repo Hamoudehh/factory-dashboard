@@ -1149,11 +1149,19 @@
         render();
       }
     });
-    // Back on the page after a while: pick up what other devices saved.
+    // Pick up what other devices or Airtable itself changed: on return to the page after a minute,
+    // and every few minutes while it is open. Skipped while someone is typing, so a refresh never wipes a form.
+    const cloudIdle = () => {
+      const a = document.activeElement;
+      return App.cloud.mode === 'synced' && !App.ui.entryForm && !document.querySelector('.modal-backdrop')
+        && !(a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName));
+    };
     document.addEventListener('visibilitychange', () => {
-      const c = App.cloud;
-      if (document.visibilityState === 'visible' && c.mode === 'synced' && Date.now() - (c.lastSync || 0) > 60000) pullCloud(true);
+      if (document.visibilityState === 'visible' && cloudIdle() && Date.now() - (App.cloud.lastSync || 0) > 60000) pullCloud(true);
     });
+    setInterval(() => {
+      if (document.visibilityState === 'visible' && cloudIdle()) pullCloud(true);
+    }, C.cloudRefreshMinutes * 60000);
     // Re-draw charts when the color scheme changes (OS setting or host toggle).
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const onScheme = () => { if (App.ui.theme === 'system') render(); };

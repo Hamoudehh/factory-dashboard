@@ -9,6 +9,7 @@
     backupKey: 'fd.v1.lastBackup',
     uiKey: 'fd.ui',
     schemaVersion: 2,
+    cloudRefreshMinutes: 5, // reload from Airtable while the page is open (PRACTICE.md)
 
     // Colors live in css/styles.css (--m-<id>), validated with the dataviz palette validator. Never pink.
     machines: [
