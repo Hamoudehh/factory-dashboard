@@ -6,6 +6,11 @@
 
 ## הפעלה
 
+**באתר (GitHub Pages):** https://hamoudehh.github.io/factory-dashboard/
+גרסה ציבורית בלי Airtable. כל דפדפן מתחיל מנתוני דמו ושומר רק אצלו.
+
+**עם הנתונים המשותפים מ-Airtable:** https://claude.ai/artifact/AHrtoHwzctBvzLKnjWC4Ut
+
 **במחשב:** לחיצה כפולה על `index.html`. הגרפים והגופנים נטענים מהאינטרנט, אז בפעם הראשונה צריך חיבור.
 
 **עם שרת מקומי** (מומלץ לפיתוח):
