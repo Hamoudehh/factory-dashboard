@@ -182,10 +182,10 @@ svg.ico { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-wi
 
 .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; max-width: 1400px; width: 100%; margin-inline: auto; }
 .filters .seg { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.16); }
-.filters .seg button { color: var(--header-ink); min-height: 44px; }
+.filters .seg button { color: var(--header-ink); min-height: 48px; }
 .filters .seg button[aria-pressed="true"] { background: var(--header-ink); color: var(--header-bg); }
 .filters select, .filters input[type="date"] {
-  min-height: 44px; border-radius: 10px; padding: 0 12px;
+  min-height: 48px; border-radius: 10px; padding: 0 12px;
   background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.16); color: var(--header-ink);
 }
 .filters select option { color: #0f1b2d; background: #fff; }
@@ -322,7 +322,7 @@ svg.ico { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-wi
 .legend-html span { display: inline-flex; align-items: center; gap: 6px; }
 .legend-html i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .chart-empty { display: grid; place-items: center; height: 100%; color: var(--ink-3); border: 1px dashed var(--line); border-radius: var(--radius-sm); text-align: center; padding: 16px; }
-details.table-toggle summary { cursor: pointer; color: var(--ink-2); font-size: 14px; font-weight: 600; min-height: 32px; display: flex; align-items: center; }
+details.table-toggle summary { cursor: pointer; color: var(--ink-2); font-size: 14px; font-weight: 600; min-height: 48px; display: flex; align-items: center; }
 
 /* ============ Tables ============ */
 .table-wrap { position: relative; overflow-x: auto; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); max-width: 100%; }
@@ -330,7 +330,7 @@ details.table-toggle summary { cursor: pointer; color: var(--ink-2); font-size: 
 table.data { width: 100%; border-collapse: collapse; font-size: 15px; }
 table.data th, table.data td { padding: 10px 12px; text-align: start; border-bottom: 1px solid var(--line); white-space: nowrap; }
 table.data th { font-size: 13px; color: var(--ink-3); font-weight: 700; background: var(--surface-2); position: sticky; top: 0; }
-table.data th button { all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; min-height: 32px; }
+table.data th button { all: unset; cursor: pointer; display: inline-flex; gap: 4px; align-items: center; min-height: 48px; }
 table.data th button:focus-visible { outline: 3px solid var(--focus); }
 table.data tbody tr:hover { background: var(--surface-2); }
 table.data td.n, table.data th.n { text-align: end; }
@@ -438,7 +438,7 @@ table.data td.n, table.data th.n { text-align: end; }
 .settings-table td { vertical-align: middle; }
 .toggle { display: inline-flex; align-items: center; gap: 8px; min-height: 48px; cursor: pointer; }
 .toggle input { width: 24px; height: 24px; accent-color: var(--primary); }
-textarea.backup-text { width: 100%; min-height: 160px; border-radius: 12px; border: 2px solid var(--line); background: var(--surface-2); padding: 12px; font-family: ui-monospace, Consolas, monospace; font-size: 13px; direction: ltr; color: var(--ink); }
+textarea.backup-text { width: 100%; min-height: 160px; border-radius: 12px; border: 2px solid var(--line); background: var(--surface-2); padding: 12px; font-family: ui-monospace, Consolas, monospace; font-size: 16px; direction: ltr; color: var(--ink); }
 
 .danger-zone { border: 2px solid var(--danger); border-radius: var(--radius); padding: 16px; display: grid; gap: 12px; background: var(--surface); }
 .danger-zone h3 { color: var(--danger); }

@@ -9,7 +9,7 @@
 | סטטוס | מאושר לפיתוח |
 | ריפו | `factory-dashboard` (פרטי, GitHub) |
 | מאגר נתונים | Airtable, בסיס "ארומה - מאפים · דשבורד ייצור" (`appa0VSn54qgGlUkF`) |
-| נהלי עבודה | [PRACTICE.md](PRACTICE.md): שמירה, GitHub, פרסום, רענון נתונים |
+| נהלי עבודה | [PRACTICE.md](PRACTICE.md): שמירה, GitHub, פרסום, רענון נתונים, בדיקה בנייד |
 
 ### מה השתנה בגרסה 2.1
 - **חיבור ל-Airtable** (סעיף 16): כל הנתונים נשמרים בבסיס Airtable משותף, וכל מכשיר שפותח את הקישור ב-claude.ai רואה אותם נתונים.
@@ -367,7 +367,7 @@ OEE כולל למפעל נסכם מהסכומים ולא כממוצע של אח�
 ```text
 factory-dashboard/
 ├── SPEC.md          המסמך הזה
-├── PRACTICE.md      נהלי עבודה: שמירה, GitHub, פרסום, רענון נתונים
+├── PRACTICE.md      נהלי עבודה: שמירה, GitHub, פרסום, רענון נתונים, בדיקה בנייד
 ├── CLAUDE.md        מפנה את Claude ל-PRACTICE.md
 ├── README.md        הפעלה, גיבוי, איפוס, בדיקות
 ├── index.html       נקודת הכניסה
@@ -385,7 +385,8 @@ factory-dashboard/
 ├── tests/airtable.test.js
 ├── tools/serve.js
 ├── tools/bundle.js
-└── tools/auto-commit.js
+├── tools/auto-commit.js
+└── tools/mobile-check.js   בדיקת נייד (רצה בדפדפן)
 ```
 
 ## 15. קריטריוני קבלה
