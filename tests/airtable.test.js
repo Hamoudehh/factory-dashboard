@@ -177,6 +177,32 @@ test('fields added in Airtable itself (like the suppliers link on items) survive
   assert.ok(!('fldSuppliersLink' in pulled.state.items[0]));
 });
 
+test('suppliers are read from Airtable and linked back to dashboard stock items', async () => {
+  const fake = fakeConnector();
+  Airtable.setClient(fake);
+  Airtable.forget();
+  const butter = { id: 'i-butter', name: 'חמאה', category: 'raw', unit: 'ק"ג', unitCost: 38, minQty: 160, active: true };
+  await Airtable.apply([{ coll: 'items', up: [butter], del: [] }]);
+  const butterRec = fake.tables[Airtable.TABLES.items.table][0].id;
+  const F = Airtable.SUPPLIERS.fields;
+  fake.tables[Airtable.SUPPLIERS.table] = [
+    { id: 'recSup1', cells: { [F.name]: 'מחלבה', [F.type]: { id: 's1', name: 'יצרן / יבואן מוצרי חלב' }, [F.status]: { id: 's2', name: 'מתאים' },
+      [F.items]: [{ id: butterRec, name: 'חמאה' }], [F.phone]: '04-640-8140', [F.rating]: 4.4, [F.reviews]: 105, [F.pricePerKg]: 36.5, [F.sheets]: true } },
+    { id: 'recSup2', cells: { [F.name]: 'מפיץ בלי פריט' } },
+    { id: 'recSup3', cells: { [F.city]: 'שורה ריקה בלי שם' } },
+  ];
+  await Airtable.pull(); // fills the item record map
+  const list = await Airtable.pullSuppliers();
+  assert.equal(list.length, 2, 'rows without a name are skipped');
+  assert.deepEqual(list[0].itemIds, ['i-butter']);
+  assert.equal(list[0].status, 'מתאים');
+  assert.equal(list[0].type, 'יצרן / יבואן מוצרי חלב');
+  assert.equal(list[0].pricePerKg, 36.5);
+  assert.equal(list[0].sheets, true);
+  assert.equal(list[1].status, 'לבדיקה', 'empty status defaults to לבדיקה');
+  assert.deepEqual(list[1].itemIds, []);
+});
+
 test('init connects through the page runtime, and stays local without it', async () => {
   delete globalThis.claude;
   assert.equal(await Airtable.init(), false);

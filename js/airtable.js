@@ -168,11 +168,13 @@
   function setClient(client) { mcp = client; } // tests inject a fake connector
   function forget() { for (const c of Object.keys(recIds)) recIds[c] = {}; } // as after a fresh page load
 
-  async function listAll(coll) {
+  const listAll = (coll) => listTable(TABLES[coll].table);
+
+  async function listTable(tableId) {
     const out = [];
     let cursor;
     for (let page = 0; page < 200; page++) {
-      const input = { baseId: BASE_ID, tableId: TABLES[coll].table, pageSize: 1000 };
+      const input = { baseId: BASE_ID, tableId, pageSize: 1000 };
       if (cursor) input.cursor = cursor;
       const p = await call('list_records_for_table', input, true);
       for (const r of p.records || []) out.push(r);
@@ -209,6 +211,46 @@
       }
     }
     return { state, settings, empty: total === 0 && !settings };
+  }
+
+  // Suppliers live only in Airtable (edited there) and are shown read-only on the inventory screen.
+  const SUPPLIERS = {
+    table: 'tbl63fKbxF1KPHRD0',
+    fields: {
+      name: 'fldSQDq81w9orydHf', type: 'flddXjvJG33yOaYnu', status: 'fldVxicWlmifEQmes', items: 'fldFMqOquqexqEaXJ',
+      city: 'fldgN0YQR6PbCAnCW', phone: 'fldRzBuWugjiXRlgq', website: 'fldxuGj3g8uAYmpvO', rating: 'fldzRdz7wOSqqMthi',
+      reviews: 'fld2pb7dpqL8E2tmB', pricePerKg: 'fldlOZzEWnPK5EMOH', minOrder: 'fld5TI4sleNLqhP5i',
+      sheets: 'fldWGUqfoyJSR4qXo', notes: 'fldwknXQf8cDLYmMe',
+    },
+  };
+
+  // Run after pull(): links point at Airtable item records, mapped back to dashboard item ids.
+  async function pullSuppliers() {
+    const F = SUPPLIERS.fields;
+    const itemByRec = {};
+    for (const [id, rec] of Object.entries(recIds.items)) itemByRec[rec] = id;
+    const label = (v) => (v && typeof v === 'object' ? v.name : v) || '';
+    const num = (v) => (v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v));
+    const rows = await listTable(SUPPLIERS.table);
+    return rows.map((row) => {
+      const c = row.cellValuesByFieldId || row.fields || {};
+      return {
+        recId: row.id,
+        name: label(c[F.name]).trim(),
+        type: label(c[F.type]),
+        status: label(c[F.status]) || 'לבדיקה',
+        itemIds: (c[F.items] || []).map((l) => itemByRec[label(l && l.id ? l.id : l)]).filter(Boolean),
+        city: label(c[F.city]),
+        phone: label(c[F.phone]),
+        website: label(c[F.website]),
+        rating: num(c[F.rating]),
+        reviews: num(c[F.reviews]),
+        pricePerKg: num(c[F.pricePerKg]),
+        minOrder: label(c[F.minOrder]),
+        sheets: c[F.sheets] === true,
+        notes: label(c[F.notes]),
+      };
+    }).filter((s) => s.name);
   }
 
   async function upsert(coll, records, onProgress) {
@@ -317,7 +359,7 @@
 
   return {
     SERVER, BASE_ID, TABLES, COLLECTIONS, MASTER,
-    init, setClient, forget, pull, diff, countOps, overlay, apply, enqueue, describeError, OFFLINE_CODES,
+    init, setClient, forget, pull, pullSuppliers, diff, countOps, overlay, apply, enqueue, describeError, OFFLINE_CODES, SUPPLIERS,
     toFields, fromFields,
     baseUrl: `https://airtable.com/${BASE_ID}`,
   };
