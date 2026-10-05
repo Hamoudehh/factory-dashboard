@@ -161,6 +161,22 @@ test('unsent changes replay on top of Airtable without undoing edits from other 
   assert.equal(Airtable.countOps(Airtable.diff(remote, merged)), 3);
 });
 
+test('fields added in Airtable itself (like the suppliers link on items) survive a dashboard sync', async () => {
+  const fake = fakeConnector();
+  Airtable.setClient(fake);
+  Airtable.forget();
+  const butter = { id: 'i-butter', name: 'חמאה', category: 'raw', unit: 'ק"ג', unitCost: 38, minQty: 160, active: true };
+  await Airtable.apply([{ coll: 'items', up: [butter], del: [] }]);
+  const row = fake.tables[Airtable.TABLES.items.table][0];
+  row.cells.fldSuppliersLink = ['recSupplier1', 'recSupplier2']; // a link field the dashboard does not know
+
+  await Airtable.apply([{ coll: 'items', up: [Object.assign({}, butter, { minQty: 200 })], del: [] }]);
+  assert.deepEqual(row.cells.fldSuppliersLink, ['recSupplier1', 'recSupplier2']);
+  const pulled = await Airtable.pull();
+  assert.equal(pulled.state.items[0].minQty, 200);
+  assert.ok(!('fldSuppliersLink' in pulled.state.items[0]));
+});
+
 test('init connects through the page runtime, and stays local without it', async () => {
   delete globalThis.claude;
   assert.equal(await Airtable.init(), false);
