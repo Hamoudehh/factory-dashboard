@@ -594,3 +594,30 @@ textarea.backup-text { width: 100%; min-height: 160px; border-radius: 12px; bord
 .cloud-card { display: grid; gap: 14px; padding: 18px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
 .cloud-status { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .cloud-status p { margin: 0; flex: 1 1 240px; color: var(--ink-2); }
+
+/* ============ Suppliers ============ */
+@media (min-width: 768px) { .grid-kpi.cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.sup-filter { width: 100%; }
+.sup-filter button { flex: 1 1 auto; padding: 0 12px; }
+.sup-group { display: grid; gap: 12px; }
+.sup-group + .sup-group { margin-top: 12px; }
+.sup-group-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.sup-group-head h3 { font-size: 20px; margin: 0; }
+.sup-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+@media (min-width: 768px) { .sup-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1200px) { .sup-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.sup-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 16px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.sup-card header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.sup-card h4 { font-size: 18px; font-weight: 700; margin: 0; line-height: 1.3; overflow-wrap: anywhere; }
+.sup-card p { margin: 0; }
+.sup-type { color: var(--ink-3); font-size: 14px; font-weight: 600; }
+.sup-meta { color: var(--ink-2); font-size: 15px; }
+.sup-deal { font-weight: 700; }
+.sup-badge { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 15px; }
+.sup-badge svg.ico { width: 18px; height: 18px; color: var(--good); stroke-width: 2.6; }
+.sup-notes { color: var(--ink-3); font-size: 14px; }
+.sup-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 6px; }
+.sup-actions .btn { flex: 1 1 auto; font-size: 17px; padding: 0 14px; }
+.sup-actions .btn svg.ico { width: 20px; height: 20px; }
+.sup-empty { display: grid; gap: 14px; padding: 18px; border-radius: 18px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
+.sup-empty p { margin: 0; color: var(--ink-2); }

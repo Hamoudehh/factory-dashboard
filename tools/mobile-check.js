@@ -8,7 +8,7 @@
 // horizontal page scroll, tap targets under 48px, and text fields under 16px.
 // An empty `problems` list means it passed.
 (async function mobileCheck(widths = [375, 412]) {
-  const VIEWS = ['owner', 'machines', 'workers', 'products', 'inventory', 'plan', 'entry', 'settings'];
+  const VIEWS = ['owner', 'machines', 'workers', 'products', 'inventory', 'suppliers', 'plan', 'entry', 'settings'];
   const CONTROLS = 'button, a.btn, a.tab, select, input:not([type=hidden]), textarea, label.btn, summary';
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 

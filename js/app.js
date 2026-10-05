@@ -30,6 +30,8 @@
     download: '<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>',
     upload: '<path d="M12 21V9M7 14l5-5 5 5M4 3h16"/>',
     copy: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
+    suppliers: '<path d="M2 6h11v10H2z"/><path d="M13 9h4l4 4v3h-8"/><circle cx="6" cy="17.5" r="2"/><circle cx="17" cy="17.5" r="2"/>',
+    phone: '<path d="M5 3h4l2 5-2.5 1.5a11 11 0 0 0 6 6L16 13l5 2v4a2 2 0 0 1-2 2A17 17 0 0 1 3 5a2 2 0 0 1 2-2z"/>',
   };
   const icon = (name, cls) => `<svg class="ico${cls ? ' ' + cls : ''}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 
@@ -69,6 +71,8 @@
     sort: {},
     // Airtable sync. mode: local | connecting | empty | synced | saving | error
     cloud: { mode: 'local', message: '', pending: 0, lastSync: null, base: null },
+    // Suppliers: read-only copy of the Airtable "ספקים" table, cached for the next open.
+    suppliers: { list: [], at: null, error: '' },
   };
 
   function loadUi() {
@@ -238,6 +242,7 @@
       ));
       App.cloud.base = JSON.stringify(pulled);
       App.cloud.lastSync = Date.now();
+      refreshSuppliers();
       // Changes that never reached Airtable (a failed save, or made during this load) go on top and are sent now.
       let unsent = loadPending();
       if (App.version !== startVersion) unsent = unsent.concat(Airtable.diff(JSON.parse(startState), App.state));
@@ -259,6 +264,26 @@
     } catch (e) {
       onCloudError(e);
     }
+  }
+
+  const SUP_KEY = 'fd.v1.suppliers';
+  function loadSuppliers() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SUP_KEY));
+      if (saved && Array.isArray(saved.list)) App.suppliers = Object.assign({ error: '' }, saved);
+    } catch (e) { /* no cache */ }
+  }
+
+  // The suppliers table is optional: a failure keeps the last list and is shown on the screen.
+  function refreshSuppliers() {
+    return Airtable.pullSuppliers().then((list) => {
+      App.suppliers = { list, at: Date.now(), error: '' };
+      try { localStorage.setItem(SUP_KEY, JSON.stringify(App.suppliers)); } catch (e) { /* storage full */ }
+      if (App.ui.view === 'suppliers') render();
+    }).catch((e) => {
+      App.suppliers.error = Airtable.describeError(e).message;
+      if (App.ui.view === 'suppliers') render();
+    });
   }
 
   async function connectCloud() {
@@ -996,12 +1021,99 @@
     };
   }
 
+  // ---------- suppliers ----------
+  const SUP_STATUS = [['מתאים', 'good'], ['נוצר קשר', 'warn'], ['לבדיקה', 'none'], ['לא מתאים', 'crit']];
+  const SUP_TYPES = ['יצרן / יבואן מוצרי חלב', 'סיטונאי / מפיץ', 'חומרי גלם לאפייה'];
+  const DASHBOARD_URL = 'https://claude.ai/artifact/AHrtoHwzctBvzLKnjWC4Ut';
+
+  function supplierCard(s) {
+    const tone = (SUP_STATUS.find(([x]) => x === s.status) || [])[1] || 'none';
+    const tel = (s.phone || '').replace(/[^\d+]/g, '');
+    const site = /^https?:\/\//i.test(s.website || '') ? s.website : '';
+    const meta = [s.city, s.rating != null ? `★ ${fmt.dec(s.rating)}${s.reviews ? ` (${fmt.int(s.reviews)} ביקורות)` : ''}` : ''].filter(Boolean).join(' · ');
+    const deal = [s.pricePerKg != null ? `${fmt.money(s.pricePerKg, 2)} לק"ג` : '', s.minOrder ? `מינימום: ${s.minOrder}` : ''].filter(Boolean).join(' · ');
+    return `<article class="sup-card">
+      <header><h4>${esc(s.name)}</h4>${pill(tone, s.status)}</header>
+      ${s.type ? `<p class="sup-type">${esc(s.type)}</p>` : ''}
+      ${meta ? `<p class="sup-meta">${esc(meta)}</p>` : ''}
+      ${deal ? `<p class="sup-deal">${esc(deal)}</p>` : ''}
+      ${s.sheets ? `<p class="sup-badge">${icon('check')}פלטות חמאה לבצק עלים</p>` : ''}
+      ${s.notes ? `<p class="sup-notes">${esc(s.notes)}</p>` : ''}
+      <div class="sup-actions">
+        ${tel ? `<a class="btn btn-primary" href="tel:${tel}" aria-label="התקשר ל${esc(s.name)}">${icon('phone')}<span dir="ltr">${esc(s.phone)}</span></a>` : ''}
+        ${site ? `<a class="btn" href="${esc(site)}" target="_blank" rel="noopener">אתר</a>` : ''}
+      </div>
+    </article>`;
+  }
+
+  function viewSuppliers(c) {
+    const sup = App.suppliers;
+    const cl = App.cloud;
+    const tableUrl = window.Airtable ? `${Airtable.baseUrl}/${Airtable.SUPPLIERS.table}` : '';
+    const when = sup.at ? new Date(sup.at).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+    const head = sectionHead('ספקים', `מטבלת הספקים ב-Airtable${when ? ` · עודכן ${when}` : ''}`);
+    const links = `<div class="btn-row">
+      ${cl.mode === 'synced' ? '<button type="button" class="btn" data-sup-reload>טען מחדש</button>' : ''}
+      ${tableUrl ? `<a class="btn" href="${tableUrl}" target="_blank" rel="noopener">פתח את טבלת הספקים ב-Airtable</a>` : ''}
+    </div>`;
+
+    if (!sup.list.length) {
+      const msg = cl.mode === 'connecting' ? 'טוען את רשימת הספקים מ-Airtable…'
+        : cl.mode === 'local' ? 'רשימת הספקים נשמרת ב-Airtable, והיא מוצגת כשהדשבורד מחובר ל-Airtable: בקישור של claude.ai, בחשבון שמחובר אליו Airtable.'
+          : sup.error || 'עדיין אין ספקים בטבלת הספקים ב-Airtable.';
+      const open = cl.mode === 'local' && !window.claude ? `<a class="btn btn-primary" href="${DASHBOARD_URL}" target="_blank" rel="noopener">פתח את הדשבורד המחובר</a>` : '';
+      return { html: `<section class="section">${head}<div class="sup-empty"><p>${esc(msg)}</p><div class="btn-row">${open}</div>${links}</div></section>` };
+    }
+
+    const filter = App.ui.supStatus || 'all';
+    const count = (st) => sup.list.filter((x) => x.status === st).length;
+    const tiles = [
+      tile({ label: 'ספקים', value: fmt.int(sup.list.length), sub: `${new Set(sup.list.flatMap((x) => x.itemIds)).size} פריטי מלאי מקושרים` }),
+      tile({ label: 'מתאימים', value: fmt.int(count('מתאים')), sub: 'אפשר להזמין מהם' }),
+      tile({ label: 'נוצר קשר', value: fmt.int(count('נוצר קשר')), sub: 'ממתינים לתשובה' }),
+      tile({ label: 'לבדיקה', value: fmt.int(count('לבדיקה')), sub: 'עוד לא דיברו איתם' }),
+    ];
+    const segs = [['all', 'הכל', sup.list.length]].concat(SUP_STATUS.map(([st]) => [st, st, count(st)]));
+    const seg = `<div class="seg sup-filter" role="group" aria-label="סינון לפי סטטוס">${segs.map(([v, l, n]) => `<button type="button" data-sup-status="${esc(v)}" aria-pressed="${filter === v}">${esc(l)} (${n})</button>`).join('')}</div>`;
+
+    const rank = (x) => [SUP_STATUS.findIndex(([st]) => st === x.status), SUP_TYPES.indexOf(x.type) < 0 ? 9 : SUP_TYPES.indexOf(x.type), -(x.rating || 0)];
+    const byRank = (a, b) => { const x = rank(a), y = rank(b); for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i] - y[i]; return a.name.localeCompare(b.name, 'he'); };
+    const shown = sup.list.filter((x) => filter === 'all' || x.status === filter).sort(byRank);
+
+    // One group per stock item, with the item's stock today next to its suppliers.
+    const inv = K.inventorySummary(activeItems(c), c.s.stockMoves, c.s.productionLogs, today(), C.coverLookbackDays, invOpts(c));
+    const stock = Object.fromEntries(inv.rows.map((r) => [r.id, r]));
+    const groups = new Map();
+    for (const x of shown) for (const id of (x.itemIds.length ? x.itemIds : [''])) {
+      if (!groups.has(id)) groups.set(id, []);
+      groups.get(id).push(x);
+    }
+    const groupHtml = [...groups.entries()].map(([id, list]) => {
+      const item = c.s.items.find((i) => i.id === id);
+      const r = stock[id];
+      const cover = r && r.daysCover != null ? (r.daysCover < 3 ? 'crit' : r.daysCover <= 7 ? 'warn' : 'good') : 'none';
+      const stockText = r ? `במלאי ${fmt.int(r.qty)} ${r.unit}${r.daysCover != null ? ` · ${fmt.dec(r.daysCover)} ימי כיסוי` : ''}` : '';
+      return `<div class="sup-group">
+        <div class="sup-group-head"><h3>${esc(item ? item.name : 'ספקים בלי פריט מלאי')} <span class="muted">(${list.length})</span></h3>${r ? pill(cover, stockText) : ''}${r && r.pctOfMin != null && r.pctOfMin < 1 ? pill('crit', 'מתחת למינימום') : ''}</div>
+        <div class="sup-grid">${list.map(supplierCard).join('')}</div>
+      </div>`;
+    }).join('') || '<p class="muted">אין ספקים בסטטוס הזה.</p>';
+
+    return {
+      html: `
+        <section class="section">${head}<div class="grid-kpi cols-4">${tiles.join('')}</div></section>
+        <section class="section">${seg}${groupHtml}</section>
+        <section class="section"><p class="hint">מעדכנים סטטוס, מחיר לק"ג, הזמנת מינימום והערות בטבלת הספקים ב-Airtable. הרשימה כאן מתעדכנת לבד כל ${C.cloudRefreshMinutes} דקות.</p>${links}</section>`,
+    };
+  }
+
   const VIEWS = {
     owner: { label: 'הנהלה', icon: 'owner', render: viewOwner, filters: true },
     machines: { label: 'מכונות', icon: 'machines', render: viewMachines, filters: true },
     workers: { label: 'עובדים', icon: 'workers', render: viewWorkers, filters: true },
     products: { label: 'מוצרים', icon: 'products', render: viewProducts, filters: true },
     inventory: { label: 'מלאי', icon: 'inventory', render: viewInventory, filters: true },
+    suppliers: { label: 'ספקים', icon: 'suppliers', render: viewSuppliers, filters: false },
     plan: { label: 'תוכנית', icon: 'plan', render: viewPlan, filters: false },
     entry: { label: 'הזנה', icon: 'entry', render: (c) => Forms.entry(c, api), filters: false },
     settings: { label: 'הגדרות', icon: 'settings', render: (c) => Forms.settings(c, api), filters: false, hiddenTab: true },
@@ -1116,6 +1228,16 @@
       setTheme(order[(order.indexOf(App.ui.theme) + 1) % order.length]);
     });
     document.getElementById('view').addEventListener('click', (e) => {
+      const supStatus = e.target.closest('[data-sup-status]');
+      if (supStatus) {
+        App.ui.supStatus = supStatus.dataset.supStatus;
+        render();
+        return;
+      }
+      if (e.target.closest('[data-sup-reload]')) {
+        pullCloud(false);
+        return;
+      }
       const up = e.target.closest('[data-cloud-upload]');
       if (up) {
         uploadInitial(up.dataset.cloudUpload);
@@ -1193,6 +1315,7 @@
     const loaded = Store.load();
     App.state = loaded.state;
     App.persisted = loaded.persisted;
+    loadSuppliers();
     Charts.setup();
     downloadsApi();
     buildShell();
