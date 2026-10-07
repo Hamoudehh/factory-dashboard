@@ -125,6 +125,10 @@
     approval_required: 'מדיניות הארגון דורשת אישור לכל פעולה ב-Airtable, וזה עדיין לא נתמך בדף.',
     server_unavailable: 'Airtable לא זמין כרגע.',
     consent_required: 'לא אושרה גישה ל-Airtable בדף הזה. בהגדרות לחץ "טען מחדש מ-Airtable" ואשר את הגישה.',
+    proxy_auth: 'הסיסמה לחיבור ל-Airtable שגויה.',
+    proxy_token: 'המפתח של Airtable שנשמר ב-Cloudflare לא תקין, או שאין לו הרשאה לבסיס. צור מפתח חדש ועדכן אותו ב-Cloudflare (AIRTABLE_TOKEN).',
+    proxy_origin: 'שרת החיבור ב-Cloudflare לא מאשר את הכתובת הזאת. בדוק את ALLOWED_ORIGIN ב-Cloudflare.',
+    proxy_setup: 'שרת החיבור ב-Cloudflare עוד לא הוגדר: חסרים בו AIRTABLE_TOKEN או DASHBOARD_PASSWORD.',
   };
   const OFFLINE_CODES = ['not_granted', 'capability_disabled', 'capability_removed'];
 
@@ -154,15 +158,118 @@
     }
   }
 
-  // Resolves true when this view can reach connectors (the claude.ai artifact viewer).
-  async function init() {
-    if (!root.claude || typeof root.claude.use !== 'function') return false;
-    try {
-      mcp = await root.claude.use('mcp');
-    } catch (e) {
-      mcp = null;
+  // ---------- proxy transport (GitHub Pages) ----------
+  // Outside claude.ai there is no connector. The same three calls then go through the Cloudflare
+  // Worker in worker/, which holds the Airtable token and checks a password, to Airtable's REST API.
+  const REST_BATCH = 10; // REST API limit per write request
+  const REST_PAGE = 100; // REST API limit per page
+
+  function proxyError(status, data) {
+    const err = (data && data.error) || {};
+    const known = { bad_key: 'proxy_auth', origin: 'proxy_origin', not_configured: 'proxy_setup' }[err];
+    const code = known || (status === 401 || status === 403 ? 'proxy_token'
+      : status === 429 || status >= 500 ? 'server_unavailable' : 'tool_error');
+    const e = new Error((err && err.message) || (typeof err === 'string' ? err : `HTTP ${status}`));
+    e.code = code;
+    if (code === 'server_unavailable') { e.retryable = true; e.retryAfterMs = status === 429 ? 30000 : 1500; }
+    return e;
+  }
+
+  function restClient(url, key, fetchImpl) {
+    const base = url.replace(/\/+$/, '');
+    const doFetch = fetchImpl || ((u, o) => root.fetch(u, o));
+    async function req(method, tableId, query, body) {
+      let res;
+      try {
+        res = await doFetch(`${base}/v0/${BASE_ID}/${tableId}${query ? `?${query}` : ''}`, {
+          method, headers: { 'Content-Type': 'application/json', 'X-Dashboard-Key': key }, body: body ? JSON.stringify(body) : undefined,
+        });
+      } catch (e) {
+        throw Object.assign(new Error('network'), { code: 'server_unavailable', retryable: true });
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw proxyError(res.status, data);
+      return data;
     }
-    return !!mcp;
+    const asConnector = (r) => ({ id: r.id, createdTime: r.createdTime, cellValuesByFieldId: r.fields || {} });
+    // Only the "find record ids" lookup filters, always on equality; done here over the id column.
+    const matches = (r, f) => {
+      const one = (o) => r.cellValuesByFieldId[o.operands[0]] === o.operands[1];
+      return f.operator === 'or' ? f.operands.some(one) : f.operands.every(one);
+    };
+
+    async function list(input) {
+      const params = new URLSearchParams({ pageSize: String(REST_PAGE), returnFieldsByFieldId: 'true' });
+      for (const f of input.fieldIds || []) params.append('fields[]', f);
+      if (!input.filters) {
+        if (input.cursor) params.set('offset', input.cursor);
+        const data = await req('GET', input.tableId, params.toString());
+        return { records: (data.records || []).map(asConnector), nextCursor: data.offset };
+      }
+      const all = [];
+      let offset;
+      do {
+        if (offset) params.set('offset', offset);
+        const data = await req('GET', input.tableId, params.toString());
+        for (const r of data.records || []) all.push(asConnector(r));
+        offset = data.offset;
+      } while (offset);
+      return { records: all.filter((r) => matches(r, input.filters)) };
+    }
+
+    async function upsertRest(input) {
+      const out = [];
+      for (let i = 0; i < input.records.length; i += REST_BATCH) {
+        if (i) await sleep(PAUSE_MS);
+        const data = await req('PATCH', input.tableId, '', {
+          performUpsert: { fieldsToMergeOn: input.performUpsert.fieldIdsToMergeOn },
+          records: input.records.slice(i, i + REST_BATCH),
+          typecast: !!input.typecast,
+          returnFieldsByFieldId: true,
+        });
+        for (const r of data.records || []) out.push(asConnector(r));
+      }
+      return { records: out };
+    }
+
+    async function removeRest(input) {
+      for (let i = 0; i < input.recordIds.length; i += REST_BATCH) {
+        if (i) await sleep(PAUSE_MS);
+        const q = input.recordIds.slice(i, i + REST_BATCH).map((id) => `records[]=${encodeURIComponent(id)}`).join('&');
+        await req('DELETE', input.tableId, q);
+      }
+      return { records: input.recordIds.map((id) => ({ id, deleted: true })) };
+    }
+
+    return {
+      async callTool(server, tool, input) {
+        if (tool === 'list_records_for_table') return { payload: await list(input) };
+        if (tool === 'update_records_for_table') return { payload: await upsertRest(input) };
+        if (tool === 'delete_records_for_table') return { payload: await removeRest(input) };
+        throw Object.assign(new Error(`unknown tool ${tool}`), { code: 'bad_request' });
+      },
+    };
+  }
+
+  let transport = null; // 'connector' (claude.ai) | 'proxy' (Cloudflare Worker) | null
+
+  // Resolves true when Airtable can be reached: through the claude.ai connector when the page runs
+  // there, otherwise through the Worker when a proxy URL and password are set.
+  async function init(opts) {
+    opts = opts || {};
+    mcp = null;
+    transport = null;
+    if (root.claude && typeof root.claude.use === 'function') {
+      try { mcp = await root.claude.use('mcp'); } catch (e) { mcp = null; }
+      if (mcp) transport = 'connector';
+      return !!mcp;
+    }
+    if (opts.proxyUrl && opts.proxyKey) {
+      mcp = restClient(opts.proxyUrl, opts.proxyKey, opts.fetch);
+      transport = 'proxy';
+      return true;
+    }
+    return false;
   }
 
   function setClient(client) { mcp = client; } // tests inject a fake connector
@@ -360,6 +467,7 @@
   return {
     SERVER, BASE_ID, TABLES, COLLECTIONS, MASTER,
     init, setClient, forget, pull, pullSuppliers, diff, countOps, overlay, apply, enqueue, describeError, OFFLINE_CODES, SUPPLIERS,
+    get transport() { return transport; },
     toFields, fromFields,
     baseUrl: `https://airtable.com/${BASE_ID}`,
   };

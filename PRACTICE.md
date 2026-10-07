@@ -7,7 +7,8 @@
 | מה | איפה |
 |---|---|
 | קוד (ריפו ציבורי, ענף `main`) | https://github.com/Hamoudehh/factory-dashboard |
-| אתר (GitHub Pages, בלי Airtable) | https://hamoudehh.github.io/factory-dashboard/ |
+| אתר (GitHub Pages, Airtable דרך Cloudflare וסיסמה) | https://hamoudehh.github.io/factory-dashboard/ |
+| שרת החיבור (Cloudflare Worker) | הקוד: `worker/airtable-proxy.mjs`, ההקמה: `worker/README.md` |
 | הדשבורד עם Airtable (claude.ai) | https://claude.ai/artifact/AHrtoHwzctBvzLKnjWC4Ut |
 | מאגר הנתונים | Airtable, בסיס "ארומה - מאפים · דשבורד ייצור" (`appa0VSn54qgGlUkF`) |
 | תיקייה מקומית | `C:\Users\hamou\סקיל חדש\factory-dashboard` |
@@ -59,12 +60,14 @@
   כך רענון לא מוחק הזנה באמצע.
 - שינויים מהדשבורד נשלחים ל-Airtable מיד, ולא מחכים לרענון.
 - התדירות מוגדרת ב-`js/config.js` (`cloudRefreshMinutes: 5`). מי שמשנה אותה מעדכן גם את המסמך הזה ואת `SPEC.md`.
-- האתר ב-GitHub לא מחובר ל-Airtable, ולכן אין בו רענון.
+- האתר ב-GitHub מתרענן באותו אופן, כשהוא מחובר דרך שרת החיבור ב-Cloudflare.
 
 ## 5. אבטחה
 
 - **אין בשום מקום token, סיסמה או מפתח API:** לא בקוד, לא ב-commit ולא ב-Artifact. הריפו ציבורי.
-- הגישה ל-Airtable היא רק דרך מחבר Airtable של claude.ai, בהרשאות של מי שצופה.
+- הגישה ל-Airtable היא דרך מחבר Airtable של claude.ai, או מהאתר ב-GitHub דרך שרת החיבור ב-Cloudflare.
+- **המפתח של Airtable שמור רק ב-Cloudflare,** כ-Secret בשם `AIRTABLE_TOKEN`, וגם הסיסמה שמורה שם (`DASHBOARD_PASSWORD`). אף אחד מהם לא נכנס לקוד, ל-commit או לצ'אט.
+- **שינוי בקוד של `worker/airtable-proxy.mjs`** צריך גם הדבקה מחדש ב-Cloudflare, כי הוא לא מתעדכן לבד.
 - token שמודבק בצ'אט לא נמצא בשימוש ולא נשמר. מבטלים אותו מיד ב-Airtable.
 - לפני שהופכים משהו לציבורי, סורקים את כל היסטוריית הגיט ומחפשים סודות.
 - `.claude/settings.local.json` לא נכנס לגיט.

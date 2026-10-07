@@ -642,12 +642,14 @@
     const status = {
       local: ['none', 'לא מחובר', 'העותק הזה של הדף שומר רק בדפדפן. החיבור ל-Airtable פועל כשהדשבורד נפתח מהקישור ב-claude.ai, בחשבון שמחובר אליו Airtable.'],
       connecting: ['warn', 'מתחבר', 'טוען את הנתונים מ-Airtable…'],
+      locked: ['warn', 'נדרשת סיסמה', 'האתר הזה מתחבר ל-Airtable דרך שרת ב-Cloudflare. הזן את סיסמת החיבור בראש הדף.'],
       empty: ['warn', 'ממתין להעלאה', 'הבסיס ב-Airtable ריק. בחר בראש הדף מה להעלות.'],
       synced: ['good', 'מחובר', `כל השינויים נשמרו ב-Airtable${when ? ` (עדכון אחרון ${when})` : ''}.`],
       saving: ['warn', 'שומר', `שולח שינויים ל-Airtable${cl.pending ? `: עוד ${api.fmt.int(cl.pending)} רשומות` : ''}…`],
       error: ['crit', 'לא נשמר', cl.message],
     }[cl.mode] || ['none', '', ''];
-    const linked = cl.mode !== 'local';
+    const linked = cl.mode !== 'local' && cl.mode !== 'locked';
+    const viaProxy = api.cloudTransport === 'proxy';
     const baseUrl = window.Airtable ? window.Airtable.baseUrl : '';
     return `<section class="section">${api.sectionHead('Airtable', 'מאגר משותף לכל המכשירים')}
       <div class="cloud-card">
@@ -655,6 +657,8 @@
         <div class="btn-row">
           ${linked ? `<button type="button" class="btn" data-cloud-reload>${api.icon('swap')} טען מחדש מ-Airtable</button>` : ''}
           ${cl.mode === 'error' ? '<button type="button" class="btn btn-primary" data-cloud-retry>נסה לשמור שוב</button>' : ''}
+          ${cl.mode === 'locked' ? '<button type="button" class="btn btn-primary" data-cloud-login-show>הזן סיסמה</button>' : ''}
+          ${viaProxy && linked ? '<button type="button" class="btn" data-cloud-logout>התנתק מהמכשיר הזה</button>' : ''}
           ${baseUrl ? `<a class="btn" href="${baseUrl}" target="_blank" rel="noopener">פתח את הבסיס ב-Airtable</a>` : ''}
         </div>
         <p class="hint">בסיס "ארומה - מאפים · דשבורד ייצור", עם טבלה לכל רשימה ולכל סוג דיווח.${linked ? ' איפוס וייבוא מתעדכנים גם ב-Airtable.' : ''}</p>
@@ -768,6 +772,10 @@
         if (reload) reload.addEventListener('click', () => api.cloudReload());
         const retry = root.querySelector('[data-cloud-retry]');
         if (retry) retry.addEventListener('click', () => api.cloudRetry());
+        const loginShow = root.querySelector('[data-cloud-login-show]');
+        if (loginShow) loginShow.addEventListener('click', () => api.cloudShowLogin());
+        const logoutBtn = root.querySelector('[data-cloud-logout]');
+        if (logoutBtn) logoutBtn.addEventListener('click', () => api.cloudLogout());
         root.querySelectorAll('[data-edit]').forEach((el) => el.addEventListener('change', () => editMaster(el)));
         root.querySelectorAll('[data-add]').forEach((b) => b.addEventListener('click', () => addMaster(b.dataset.add)));
         root.querySelectorAll('[data-del-master]').forEach((b) => b.addEventListener('click', () => {

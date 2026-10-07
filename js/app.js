@@ -172,6 +172,7 @@
     const c = App.cloud;
     const text = {
       connecting: 'Airtable: טוען…',
+      locked: 'Airtable: נדרשת סיסמה',
       empty: 'Airtable: ממתין להעלאה',
       synced: 'Airtable: מסונכרן',
       saving: c.pending ? `Airtable: שומר ${fmt.int(c.pending)}…` : 'Airtable: שומר…',
@@ -185,6 +186,13 @@
 
   function onCloudError(e) {
     const d = Airtable.describeError(e);
+    if (d.code === 'proxy_auth') {
+      saveKey('');
+      App.cloud.base = null;
+      setCloud('locked', d.message);
+      render();
+      return;
+    }
     if (Airtable.OFFLINE_CODES.includes(d.code)) {
       App.cloud.base = null;
       setCloud('local');
@@ -286,12 +294,53 @@
     });
   }
 
+  // GitHub Pages copy: the password for the Cloudflare Worker, remembered on this device after the first login.
+  const KEY_STORE = 'fd.airtableKey';
+  const LATER_STORE = 'fd.cloudLater';
+  function loadKey() { try { return localStorage.getItem(KEY_STORE) || ''; } catch (e) { return ''; } }
+  function saveKey(k) { try { if (k) localStorage.setItem(KEY_STORE, k); else localStorage.removeItem(KEY_STORE); } catch (e) { /* storage blocked */ } }
+  function later() { try { return sessionStorage.getItem(LATER_STORE) === '1'; } catch (e) { return false; } }
+  function setLater(v) { try { if (v) sessionStorage.setItem(LATER_STORE, '1'); else sessionStorage.removeItem(LATER_STORE); } catch (e) { /* storage blocked */ } }
+  const proxyAvailable = () => !!C.airtableProxyUrl && !(window.claude && typeof window.claude.use === 'function');
+
   async function connectCloud() {
     if (!window.Airtable) return;
     let ok = false;
-    try { ok = await Airtable.init(); } catch (e) { ok = false; }
-    if (!ok) return setCloud('local');
+    try { ok = await Airtable.init({ proxyUrl: C.airtableProxyUrl, proxyKey: loadKey() }); } catch (e) { ok = false; }
+    if (!ok) {
+      if (proxyAvailable()) {
+        setCloud('locked', App.cloud.mode === 'locked' ? App.cloud.message : '');
+        render();
+      } else {
+        setCloud('local');
+      }
+      return;
+    }
     await pullCloud(false);
+  }
+
+  function login(key) {
+    saveKey(key);
+    setLater(false);
+    setCloud('connecting');
+    render();
+    connectCloud();
+  }
+
+  // Leaving clears the business data from this device: the password, the local copy and the suppliers.
+  function logout() {
+    if (loadPending().length) return toast('יש שינויים שעוד לא נשמרו ב-Airtable. נסה שוב בעוד רגע.');
+    saveKey('');
+    try { localStorage.removeItem(SUP_KEY); } catch (e) { /* storage blocked */ }
+    App.suppliers = { list: [], at: null, error: '' };
+    App.cloud.base = null;
+    App.state = Store.resetState(App.state, 'demo', today());
+    App.version += 1;
+    Store.save(App.state);
+    Airtable.init({});
+    setCloud('locked');
+    render();
+    toast('התנתקת. הנתונים המשותפים נמחקו מהמכשיר הזה.');
   }
 
   // First connection to an empty base: upload everything, or only the lists and start clean.
@@ -312,6 +361,21 @@
   }
 
   function cloudBanner() {
+    if (App.cloud.mode === 'locked' && !later()) {
+      return `<section class="cloud-banner" aria-labelledby="cloud-lock-title">
+        <div>
+          <h2 id="cloud-lock-title">חיבור ל-Airtable</h2>
+          <p>הזן את סיסמת החיבור כדי לעבוד עם הנתונים המשותפים. בלי סיסמה הדשבורד מציג נתוני דמו ושומר רק במכשיר הזה.</p>
+        </div>
+        <form class="cloud-login" data-cloud-login>
+          <label for="cloud-key" class="sr-only">סיסמת החיבור</label>
+          <input type="password" id="cloud-key" autocomplete="current-password" placeholder="סיסמת החיבור" required>
+          <button type="submit" class="btn btn-primary">התחבר</button>
+        </form>
+        ${App.cloud.message ? `<p class="cloud-error" role="alert">${esc(App.cloud.message)}</p>` : ''}
+        <div><button type="button" class="btn" data-cloud-later>לא עכשיו</button></div>
+      </section>`;
+    }
     if (App.cloud.mode !== 'empty') return '';
     return `<section class="cloud-banner" aria-labelledby="cloud-banner-title">
       <div>
@@ -1059,6 +1123,7 @@
 
     if (!sup.list.length) {
       const msg = cl.mode === 'connecting' ? 'טוען את רשימת הספקים מ-Airtable…'
+        : cl.mode === 'locked' ? 'כדי לראות את הספקים, התחבר ל-Airtable עם סיסמת החיבור.'
         : cl.mode === 'local' ? 'רשימת הספקים נשמרת ב-Airtable, והיא מוצגת כשהדשבורד מחובר ל-Airtable: בקישור של claude.ai, בחשבון שמחובר אליו Airtable.'
           : sup.error || 'עדיין אין ספקים בטבלת הספקים ב-Airtable.';
       const open = cl.mode === 'local' && !window.claude ? `<a class="btn btn-primary" href="${DASHBOARD_URL}" target="_blank" rel="noopener">פתח את הדשבורד המחובר</a>` : '';
@@ -1228,6 +1293,11 @@
       setTheme(order[(order.indexOf(App.ui.theme) + 1) % order.length]);
     });
     document.getElementById('view').addEventListener('click', (e) => {
+      if (e.target.closest('[data-cloud-later]')) {
+        setLater(true);
+        render();
+        return;
+      }
       const supStatus = e.target.closest('[data-sup-status]');
       if (supStatus) {
         App.ui.supStatus = supStatus.dataset.supStatus;
@@ -1271,6 +1341,13 @@
         render();
       }
     });
+    document.getElementById('view').addEventListener('submit', (e) => {
+      const form = e.target.closest('[data-cloud-login]');
+      if (!form) return;
+      e.preventDefault();
+      const key = form.querySelector('input').value;
+      if (key) login(key);
+    });
     // Pick up what other devices or Airtable itself changed: on return to the page after a minute,
     // and every few minutes while it is open. Skipped while someone is typing, so a refresh never wipes a form.
     const cloudIdle = () => {
@@ -1305,6 +1382,9 @@
     get cloud() { return App.cloud; },
     cloudReload: () => pullCloud(false),
     cloudRetry: () => { if (App.cloud.base == null) return pullCloud(false); setCloud('saving'); return runSync(); },
+    get cloudTransport() { return window.Airtable ? Airtable.transport : null; },
+    cloudLogout: logout,
+    cloudShowLogin: () => { setLater(false); window.scrollTo(0, 0); render(); },
   };
 
   function init() {
