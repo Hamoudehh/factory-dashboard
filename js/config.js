@@ -11,7 +11,7 @@
     schemaVersion: 2,
     cloudRefreshMinutes: 5, // reload from Airtable while the page is open (PRACTICE.md)
     // Cloudflare Worker that connects the GitHub Pages copy to Airtable (worker/README.md). Empty: not set up yet.
-    airtableProxyUrl: '',
+    airtableProxyUrl: 'https://aroma-airtable.hamoudeh2003.workers.dev',
 
     // Colors live in css/styles.css (--m-<id>), validated with the dataviz palette validator. Never pink.
     machines: [
